@@ -1,5 +1,6 @@
 from __future__ import division
 from Models.YOLO.config.parser import *
+from Models.YOLO.utility import *
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,6 +18,8 @@ class YOLODeepNet(nn.Module):
         modules = self.blocks[1:]
         print(self.blocks[1:])
         outputs = {}
+        write = 0
+        detections = 0
         for i, module in enumerate(modules):
             module_type = (module["type"])
             if module_type == "convolutional" or module_type == "upsample":
@@ -42,6 +45,26 @@ class YOLODeepNet(nn.Module):
             elif module_type == "shortcut":
                 from_ = int(module["from"])
                 x = outputs[i-1] + outputs[i+from_]
-            #TODO YOLO layer,
+            elif module_type == 'yolo':
+                anchors = self.module_list[i][0].anchors
+                # Get the input dimensions
+                inp_dim = int(self.net_info["height"])
+
+                # Get the number of classes
+                num_classes = int(module["classes"])
+
+                # Transform
+                x = x.data
+                x = predict_transform(x, inp_dim, anchors, num_classes, CUDA)
+                if not write:  # if no collector has been intialised.
+                    detections = x
+                    write = 1
+
+                else:
+                    detections = torch.cat((detections, x), 1)
+
+            outputs[i] = x
+
+            return detections
 
         return
