@@ -9,6 +9,7 @@ x += "\\Models\\YOLO\\config\\yolov3.cfg"
 print(x)
 
 test_dicom_reader()
+print("skończyłem")
 #YOLO = YOLODeepNet(x)
 #YOLO.forward(0, True)
 
