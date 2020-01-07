@@ -131,3 +131,5 @@ dmypy.json
 *.dcm
 # Idea files
 .idea
+# CSV
+*.csv

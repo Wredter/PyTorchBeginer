@@ -8,9 +8,9 @@ from torch.autograd import Variable
 import numpy as np
 
 
-class YOLODeepNet(nn.Module):
-    def __init__(self,cfgfile):
-        super(YOLODeepNet,self).__init__()
+class YOLODarkNet(nn.Module):
+    def __init__(self, cfgfile):
+        super(YOLODarkNet, self).__init__()
         self.blocks = parse_cfg(cfgfile)
         self.net_info, self.module_list = create_modules(self.blocks)
 

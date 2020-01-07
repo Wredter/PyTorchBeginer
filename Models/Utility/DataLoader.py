@@ -17,6 +17,7 @@ def test_dicom_reader():
     print(ds1)
     print("\n")
     print(ds2)
+    print(ds0.keys())
     pixeldata0 = ds0.pixel_array
     pixeldata1 = ds1.pixel_array
     pixeldata2 = ds2.pixel_array
