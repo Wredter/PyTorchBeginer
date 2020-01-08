@@ -1,6 +1,6 @@
 import torch
 from Models.YOLO.config.parser import parse_cfg, create_modules
-from Models.YOLO.deepnet import *
+from Models.YOLO.darknet import *
 import os
 from Models.Utility.ResourceProvider import *
 from Models.Utility.DataLoader import test_dicom_reader
@@ -11,12 +11,14 @@ import matplotlib.pyplot as plt
 #print(x)
 y = os.getcwd()
 y += "\\Data\\only_CC_set.csv"
-test = ResourceProvider(y, "D:\\DataSet\\CBIS-DDSM\\", "")
+test = ResourceProvider(y, "D:\\DataSet\\CBIS-DDSM\\", "D:\\DataSet\\ROI\\CBIS-DDSM\\")
 test.read()
-for x, y in test.rows.items():
+for x, y in test.columns.items():
   print(x, y)
-img = test.read_dicom_file(0)
+img, roi = test.read_dicom_file(0)
 plt.imshow(img)
+plt.show()
+plt.imshow(roi)
 plt.show()
 #test_dicom_reader()
 print("skończyłem")

@@ -1,6 +1,5 @@
 import os
 import csv
-
 import pydicom as dim
 
 from sympy import Matrix
@@ -35,7 +34,7 @@ class ResourceProvider:
         return "Columns and rows initialized"
 
     def read_csv_column(self):
-        with open(self.mycsv) as csv_file:
+        with open(self.mycsv, newline='') as csv_file:
             csv_reader = csv.reader(csv_file, delimiter=',')
             line_count = 0
 
@@ -53,7 +52,7 @@ class ResourceProvider:
         return self.columns
 
     def read_csv_rows(self):
-        with open(self.mycsv) as csv_file:
+        with open(self.mycsv, newline='') as csv_file:
             csv_reader = csv.reader(csv_file, delimiter=',')
             line_count = 0
 
@@ -66,7 +65,12 @@ class ResourceProvider:
         return self.rows
 
     def read_dicom_file(self, row_number):
-        file_path = self.datapath
-        file_path += self.rows[row_number][11].replace("/", "\\")
-        dicom = dim.dcmread(file_path)
-        return dicom.pixel_array
+        img_path = self.datapath
+        roi_path = self.roipath
+        img_path = img_path + self.rows[row_number][11]
+        roi_path = roi_path + self.rows[row_number][12].replace("\n", "")
+        dicom_img = dim.dcmread(img_path)
+        dicom_roi = dim.dcmread(roi_path)
+        print(dicom_img.pixel_array.__len__())
+        print(dicom_roi.pixel_array.__len__())
+        return dicom_img.pixel_array, dicom_roi.pixel_array

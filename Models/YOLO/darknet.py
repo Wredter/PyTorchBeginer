@@ -3,9 +3,20 @@ from Models.YOLO.config.parser import *
 from Models.YOLO.utility import *
 import torch
 import torch.nn as nn
+import cv2
 import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
+
+
+def get_test_input():
+    img = cv2.imread("dog-cycle-car.png")
+    img = cv2.resize(img, (416, 416))          #Resize to the input dimension
+    img_ = img[:, :, ::-1].transpose((2, 0, 1))  # BGR -> RGB | H X W C -> C X H X W
+    img_ = img_[np.newaxis, :, :, :]/255.0       #Add a channel at 0 (for batch) | Normalise
+    img_ = torch.from_numpy(img_).float()     #Convert to float
+    img_ = Variable(img_)                     # Convert to Variable
+    return img_
 
 
 class YOLODarkNet(nn.Module):
@@ -16,17 +27,16 @@ class YOLODarkNet(nn.Module):
 
     def forward(self, x, CUDA):
         modules = self.blocks[1:]
-        print(self.blocks[1:])
+        # print(self.blocks[1:])
         outputs = {}
         write = 0
-        detections = 0
         for i, module in enumerate(modules):
             module_type = (module["type"])
             if module_type == "convolutional" or module_type == "upsample":
-                #To pytorch umie samemu
+                # To pytorch umie samemu
                 x = self.module_list[i](x)
             elif module_type == "route":
-                #Tego nie umie
+                # Tego nie umie
                 layers = module["layers"]
                 layers = [int(a) for a in layers]
 
@@ -55,16 +65,15 @@ class YOLODarkNet(nn.Module):
 
                 # Transform
                 x = x.data
+                if CUDA:
+                    x = x.to('cuda')
                 x = predict_transform(x, inp_dim, anchors, num_classes, CUDA)
                 if not write:  # if no collector has been intialised.
                     detections = x
                     write = 1
-
                 else:
                     detections = torch.cat((detections, x), 1)
 
             outputs[i] = x
 
-            return detections
-
-        return
+        return detections
