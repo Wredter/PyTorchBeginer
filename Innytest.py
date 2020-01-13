@@ -15,3 +15,5 @@ print("COO KURWA")
 print(prediction)
 
 
+
+
