@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 
-from Models.YOLO.config.Layers import EmptyLayer, DetectionLayer
+from Models.YOLO.config.Layers import *
 
 
 def parse_cfg(cfgfile):
@@ -34,15 +34,15 @@ def parse_cfg(cfgfile):
 
 
 def create_modules(blocks):
-    net_info = blocks[0] #First block in config file conteining net parameters
+    net_info = blocks[0]  # First block in config file conteining net parameters
     module_list = nn.ModuleList()
-    prev_filters = 3 #Coresponding to # chanels in the image RGB
+    prev_filters = 3  # Coresponding to # chanels in the image RGB
     output_filters = []
 
     for index, x in enumerate(blocks[1:]):
         module = nn.Sequential()
 
-        if (x["type"] == "convolutional"):
+        if x["type"] == "convolutional":
             # Get the info about the layer
             activation = x["activation"]
             try:
@@ -79,11 +79,11 @@ def create_modules(blocks):
 
             # If it's an upsampling layer
             # We use Bilinear2dUpsampling
-        elif (x["type"] == "upsample"):
+        elif x["type"] == "upsample":
             stride = int(x["stride"])
             upsample = nn.Upsample(scale_factor=2, mode="bilinear")
             module.add_module("upsample_{}".format(index), upsample)
-        elif (x["type"] == "route"):
+        elif x["type"] == "route":
             x["layers"] = x["layers"].split(',')
             # Start  of a route
             start = int(x["layers"][0])
@@ -113,6 +113,8 @@ def create_modules(blocks):
         elif x["type"] == "yolo":
             mask = x["mask"].split(",")
             mask = [int(x) for x in mask]
+
+#            classes = int(x["classes"])
 
             anchors = x["anchors"].split(",")
             anchors = [int(a) for a in anchors]

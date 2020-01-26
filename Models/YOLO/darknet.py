@@ -28,6 +28,8 @@ class YOLODarkNet(nn.Module):
     def forward(self, x, CUDA):
         modules = self.blocks[1:]
         # print(self.blocks[1:])
+        inp_dim = 0
+        num_classes = 0
         outputs = {}
         write = 0
         for i, module in enumerate(modules):
@@ -75,5 +77,8 @@ class YOLODarkNet(nn.Module):
                     detections = torch.cat((detections, x), 1)
 
             outputs[i] = x
+
+        dumy_target = torch.cuda.FloatTensor([[0.5, 0.5, 0.1, 0.1, 0]])
+        write_results(detections, 0.5, num_classes, dumy_target, inp_dim)
 
         return detections

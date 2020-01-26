@@ -83,18 +83,38 @@ class ResourceProvider:
         dicom_crop = dim.dcmread(crop_path)
         dicom_roi = dim.dcmread(roi_path)
         if dicom_img.pixel_array.size == dicom_roi.pixel_array.size:
-            return dicom_img, dicom_roi
+            return dicom_img, dicom_roi, img_path, roi_path
         elif dicom_img.pixel_array.size == dicom_crop.pixel_array.size:
-            return dicom_img, dicom_crop
+            return dicom_img, dicom_crop, img_path, crop_path
         else:
-            return 0, 0
+            return 0, 0, 0, 0
+
+    def clear_txt(self):
+        for img in self.rows:
+            img_path = ""
+            crop_path = ""
+            roi_path = ""
+            img_path += self.datapath
+            img_path += self.rows[img][11]
+            crop_path += self.roipath
+            crop_path += self.rows[img][12]
+            roi_path += self.roipath
+            roi_path += self.rows[img][13].replace("\n", "")
+
+            txt_roi = roi_path.replace(".dcm", ".txt")
+            txt_cro = crop_path.replace(".dcm", ".txt")
+            if os.path.exists(txt_roi):
+                os.remove(txt_roi)
+            else:
+                if os.path.exists(txt_cro):
+                    os.remove(txt_cro)
+                print(str(txt_roi) + "File does not exists")
 
     def prep_grand_truth_box(self):
         jeblo = 0
         udalo = 0
         row = 0
 
-        first = True
         y_gora = 0
         y_dol = 0
         x_lewo = 0
@@ -110,10 +130,11 @@ class ResourceProvider:
             crop_path += self.rows[omage][12]
             roi_path += self.roipath
             roi_path += self.rows[omage][13].replace("\n", "")
-            img, roi = self.compare_img(img_path, crop_path, roi_path)
+            img, roi, img_path, roi_path = self.compare_img(img_path, crop_path, roi_path)
             if img != 0 and roi != 0:
                 gt_img = roi.pixel_array
                 y_size, x_size = gt_img.shape
+                first = True
                 for y in range(y_size):
                     for x in range(x_size):
                         if gt_img[y][x] == 0:
@@ -136,6 +157,12 @@ class ResourceProvider:
                 pos_y = ((y_dol + y_gora)/2)/y_size
                 height = (y_dol - y_gora)/y_size
                 width = (x_prawo - x_lewo)/x_size
+                dicom_img = dim.dcmread(img_path)
+                dicom_roi = dim.dcmread(roi_path)
+                plt.imshow(dicom_img.pixel_array)
+                plt.show()
+                plt.imshow(dicom_roi.pixel_array)
+                plt.show()
                 gt_txt = roi_path.replace(".dcm", ".txt")
                 f = open(gt_txt, "w")
                 f.write(str(pos_x) + ",")

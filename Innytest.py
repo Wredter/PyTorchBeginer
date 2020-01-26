@@ -11,8 +11,8 @@ x += "\\Models\\YOLO\\config\\yolov3.cfg"
 model = YOLODarkNet(x)
 input = get_test_input()
 prediction = model(input, torch.cuda.is_available())
-print("COO KURWA")
 print(prediction)
+
 
 
 
