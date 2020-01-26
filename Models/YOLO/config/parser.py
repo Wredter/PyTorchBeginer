@@ -114,15 +114,15 @@ def create_modules(blocks):
             mask = x["mask"].split(",")
             mask = [int(x) for x in mask]
 
-#            classes = int(x["classes"])
+            classes = int(x["classes"])
 
             anchors = x["anchors"].split(",")
             anchors = [int(a) for a in anchors]
             anchors = [(anchors[i], anchors[i + 1]) for i in range(0, len(anchors), 2)]
             anchors = [anchors[i] for i in mask]
 
-            detection = DetectionLayer(anchors)
-            module.add_module("Detection_{}".format(index), detection)
+            YOLO = YOLOLayer(anchors, classes)
+            module.add_module("Detection_{}".format(index), YOLO)
 
         module_list.append(module)
         prev_filters = filters

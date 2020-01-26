@@ -1,5 +1,7 @@
-import torch.nn as nn
+from __future__ import division
+from Models.YOLO.config.parser import *
 import torch
+import torch.nn as nn
 import numpy as np
 
 
@@ -7,13 +9,8 @@ class EmptyLayer(nn.Module):
     def __init__(self):
         super(EmptyLayer, self).__init__()
 
-class DetectionLayer(nn.Module):
-    def __init__(self, anchors):
-        super(DetectionLayer, self).__init__()
-        self.anchors = anchors
 
-
-"""class YOLOLayer(nn.Module):
+class YOLOLayer(nn.Module):
     # OLD detection layer
     def __init__(self, anchors, num_classes, img_dim=416):
         super(YOLOLayer, self).__init__()
@@ -32,7 +29,7 @@ class DetectionLayer(nn.Module):
     def compute_grid_offsets(self, grid_size, CUDA=True):
         self.grid_size = grid_size
         temp_grid_size = self.grid_size
-
+        self.stride = self.img_dim / self.grid_size
         FloatTensor = torch.FloatTensor
         grid = np.arange(grid_size)
         a, b = np.meshgrid(grid, grid)
@@ -49,7 +46,7 @@ class DetectionLayer(nn.Module):
         self.anchor_w = self.scaled_anchors[:, 0, 1].view((1, self.num_anchors, 1, 1))
         self.anchor_h = self.scaled_anchors[:, 1, 2].view((1, self.num_anchors, 1, 1))
 
-    def forward(self, x, targets=None, img_dim=None):
+    def forward(self, x, img_dim=None, targets=None):
         FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
         LongTensor = torch.cuda.LongTensor if x.is_cuda else torch.LongTensor
         ByteTensor = torch.cuda.ByteTensor if x.is_cuda else torch.ByteTensor
@@ -60,7 +57,7 @@ class DetectionLayer(nn.Module):
 
         prediction = (
             x.view(num_samples, self.num_anchors, self.num_classes + 5, grid_size, grid_size)
-            .permutate(0, 1, 3, 4, 2)
+            .permute(0, 1, 3, 4, 2)
             .contiguous()
         )
 
@@ -90,7 +87,7 @@ class DetectionLayer(nn.Module):
             ),
             -1,
         )
-
+        targets = torch.cuda.FloatTensor([[0, 1, 0.5, 0.5, 0.1, 0.1], [1, 1, 0.25, 0.25, 0.05, 0.01]])
         if targets is None:
             return output, 0
         else:
@@ -131,5 +128,21 @@ def build_targets(pred_boxes, pred_classes, target, anchors, ignore_thres):
     # anchors
     ious = torch.stack([bbox_wh_iou(anchor, gwh) for anchor in anchors])
     return 0
-    """
+
+
+def bbox_wh_iou(wh1, wh2):
+    b1_w, b1_h = wh1[0], wh1[1]
+    b2_w, b2_h = wh2[:, [0]], wh2[:, [1]]
+    inter_w = torch.min(b1_w, b2_w)
+    inter_h = torch.min(b1_h, b2_h)
+    intersection = inter_w * inter_h
+
+    # union
+
+    b1_area = b1_w * b1_h
+    b2_area = b2_w * b2_h
+
+    iou = intersection / (b1_area + b2_area - intersection)
+
+    return iou.max()
 

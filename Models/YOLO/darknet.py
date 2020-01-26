@@ -1,6 +1,7 @@
 from __future__ import division
 from Models.YOLO.config.parser import *
 from Models.YOLO.utility import *
+from Models.YOLO.config.Layers import *
 import torch
 import torch.nn as nn
 import cv2
@@ -58,6 +59,10 @@ class YOLODarkNet(nn.Module):
                 from_ = int(module["from"])
                 x = outputs[i-1] + outputs[i+from_]
             elif module_type == 'yolo':
+                dumy_target = 0  # torch.cuda.FloatTensor([[0, 1, 0.5, 0.5, 0.1, 0.1], [1, 1, 0.25, 0.25, 0.05, 0.01]])
+                inp_dim = int(self.net_info["height"])
+                x = self.module_list[i](x, 0, 0)
+                """
                 anchors = self.module_list[i][0].anchors
                 # Get the input dimensions
                 inp_dim = int(self.net_info["height"])
@@ -75,10 +80,11 @@ class YOLODarkNet(nn.Module):
                     write = 1
                 else:
                     detections = torch.cat((detections, x), 1)
+                """
 
             outputs[i] = x
 
-        dumy_target = torch.cuda.FloatTensor([[0.5, 0.5, 0.1, 0.1, 0]])
-        write_results(detections, 0.5, num_classes, dumy_target, inp_dim)
+#        dumy_target = torch.cuda.FloatTensor([[0.5, 0.5, 0.1, 0.1, 0]])
+#        write_results(detections, 0.5, num_classes, dumy_target, inp_dim)
 
-        return detections
+        return 0
