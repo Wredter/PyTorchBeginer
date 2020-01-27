@@ -33,99 +33,75 @@ def parse_cfg(cfgfile):
     return blocks
 
 
-def create_modules(blocks):
-    net_info = blocks[0]  # First block in config file conteining net parameters
+def create_modules(module_defs):
+    """
+    Constructs module list of layer blocks from module configuration in module_defs
+    """
+    hyperparams = module_defs.pop(0)
+    output_filters = [int(hyperparams["channels"])]
     module_list = nn.ModuleList()
-    prev_filters = 3  # Coresponding to # chanels in the image RGB
-    output_filters = []
+    for module_i, module_def in enumerate(module_defs):
+        modules = nn.Sequential()
 
-    for index, x in enumerate(blocks[1:]):
-        module = nn.Sequential()
-
-        if x["type"] == "convolutional":
-            # Get the info about the layer
-            activation = x["activation"]
+        if module_def["type"] == "convolutional":
             try:
-                batch_normalize = int(x["batch_normalize"])
-                bias = False
+                bn = int(module_def["batch_normalize"])
             except:
-                batch_normalize = 0
-                bias = True
+                bn = 0
 
-            filters = int(x["filters"])
-            padding = int(x["pad"])
-            kernel_size = int(x["size"])
-            stride = int(x["stride"])
+            filters = int(module_def["filters"])
+            kernel_size = int(module_def["size"])
+            pad = (kernel_size - 1) // 2
+            modules.add_module(
+                f"conv_{module_i}",
+                nn.Conv2d(
+                    in_channels=output_filters[-1],
+                    out_channels=filters,
+                    kernel_size=kernel_size,
+                    stride=int(module_def["stride"]),
+                    padding=pad,
+                    bias=not bn,
+                ),
+            )
+            if bn:
+                modules.add_module(f"batch_norm_{module_i}", nn.BatchNorm2d(filters, momentum=0.9, eps=1e-5))
+            if module_def["activation"] == "leaky":
+                modules.add_module(f"leaky_{module_i}", nn.LeakyReLU(0.1))
 
-            if padding:
-                pad = (kernel_size - 1) // 2
-            else:
-                pad = 0
+        elif module_def["type"] == "maxpool":
+            kernel_size = int(module_def["size"])
+            stride = int(module_def["stride"])
+            if kernel_size == 2 and stride == 1:
+                modules.add_module(f"_debug_padding_{module_i}", nn.ZeroPad2d((0, 1, 0, 1)))
+            maxpool = nn.MaxPool2d(kernel_size=kernel_size, stride=stride, padding=int((kernel_size - 1) // 2))
+            modules.add_module(f"maxpool_{module_i}", maxpool)
 
-            # Add the convolutional layer
-            conv = nn.Conv2d(prev_filters, filters, kernel_size, stride, pad, bias=bias)
-            module.add_module("conv_{0}".format(index), conv)
+        elif module_def["type"] == "upsample":
+            upsample = Upsample(scale_factor=int(module_def["stride"]), mode="nearest")
+            modules.add_module(f"upsample_{module_i}", upsample)
 
-            # Add the Batch Norm Layer
-            if batch_normalize:
-                bn = nn.BatchNorm2d(filters)
-                module.add_module("batch_norm_{0}".format(index), bn)
+        elif module_def["type"] == "route":
+            layers = [int(x) for x in module_def["layers"].split(",")]
+            filters = sum([output_filters[1:][i] for i in layers])
+            modules.add_module(f"route_{module_i}", EmptyLayer())
 
-            # Check the activation.
-            # It is either Linear or a Leaky ReLU for YOLO
-            if activation == "leaky":
-                activn = nn.LeakyReLU(0.1, inplace=True)
-                module.add_module("leaky_{0}".format(index), activn)
+        elif module_def["type"] == "shortcut":
+            filters = output_filters[1:][int(module_def["from"])]
+            modules.add_module(f"shortcut_{module_i}", EmptyLayer())
 
-            # If it's an upsampling layer
-            # We use Bilinear2dUpsampling
-        elif x["type"] == "upsample":
-            stride = int(x["stride"])
-            upsample = nn.Upsample(scale_factor=2, mode="bilinear")
-            module.add_module("upsample_{}".format(index), upsample)
-        elif x["type"] == "route":
-            x["layers"] = x["layers"].split(',')
-            # Start  of a route
-            start = int(x["layers"][0])
-            # end, if there exists one.
-            try:
-                end = int(x["layers"][1])
-            except:
-                end = 0
-            # Positive anotation
-            if start > 0:
-                start = start - index
-            if end > 0:
-                end = end - index
-            route = EmptyLayer()
-            module.add_module("route_{0}".format(index), route)
-            if end < 0:
-                filters = output_filters[index + start] + output_filters[index + end]
-            else:
-                filters = output_filters[index + start]
-
-            # shortcut corresponds to skip connection
-        elif x["type"] == "shortcut":
-            shortcut = EmptyLayer()
-            module.add_module("shortcut_{}".format(index), shortcut)
-
-        # Yolo is the detection layer
-        elif x["type"] == "yolo":
-            mask = x["mask"].split(",")
-            mask = [int(x) for x in mask]
-
-            classes = int(x["classes"])
-
-            anchors = x["anchors"].split(",")
-            anchors = [int(a) for a in anchors]
+        elif module_def["type"] == "yolo":
+            anchor_idxs = [int(x) for x in module_def["mask"].split(",")]
+            # Extract anchors
+            anchors = [int(x) for x in module_def["anchors"].split(",")]
             anchors = [(anchors[i], anchors[i + 1]) for i in range(0, len(anchors), 2)]
-            anchors = [anchors[i] for i in mask]
-
-            YOLO = YOLOLayer(anchors, classes)
-            module.add_module("Detection_{}".format(index), YOLO)
-
-        module_list.append(module)
-        prev_filters = filters
+            anchors = [anchors[i] for i in anchor_idxs]
+            num_classes = int(module_def["classes"])
+            img_size = int(hyperparams["height"])
+            # Define detection layer
+            yolo_layer = YOLOLayer(anchors, num_classes, img_size)
+            modules.add_module(f"yolo_{module_i}", yolo_layer)
+        # Register module list and number of output filters
+        module_list.append(modules)
         output_filters.append(filters)
 
-    return net_info, module_list
+    return hyperparams, module_list

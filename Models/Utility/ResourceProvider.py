@@ -3,7 +3,6 @@ import csv
 import pydicom as dim
 import matplotlib.pyplot as plt
 
-from sympy import Matrix
 # ############# ROWS ###########################
 # 0  patient ID
 # 1  breast_density

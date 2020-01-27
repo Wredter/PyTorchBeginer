@@ -1,17 +1,33 @@
-from __future__ import division
-from Models.YOLO.config.parser import *
-import torch
 import torch.nn as nn
+import torch
+import torch.nn.functional as F
+from Models.YOLO.utility import *
 import numpy as np
 
 
+class Upsample(nn.Module):
+    """ nn.Upsample is deprecated """
+
+    def __init__(self, scale_factor, mode="nearest"):
+        super(Upsample, self).__init__()
+        self.scale_factor = scale_factor
+        self.mode = mode
+
+    def forward(self, x):
+        x = F.interpolate(x, scale_factor=self.scale_factor, mode=self.mode)
+        return x
+
+
 class EmptyLayer(nn.Module):
+    """Placeholder for 'route' and 'shortcut' layers"""
+
     def __init__(self):
         super(EmptyLayer, self).__init__()
 
 
 class YOLOLayer(nn.Module):
-    # OLD detection layer
+    """Detection layer"""
+
     def __init__(self, anchors, num_classes, img_dim=416):
         super(YOLOLayer, self).__init__()
         self.anchors = anchors
@@ -20,36 +36,30 @@ class YOLOLayer(nn.Module):
         self.ignore_thres = 0.5
         self.mse_loss = nn.MSELoss()
         self.bce_loss = nn.BCELoss()
-        self.obj_scale = 100
+        self.obj_scale = 1
+        self.noobj_scale = 100
         self.metrics = {}
         self.img_dim = img_dim
-        self.grid_size = 0
-        self.stride = 0
+        self.grid_size = 0  # grid size
 
-    def compute_grid_offsets(self, grid_size, CUDA=True):
+    def compute_grid_offsets(self, grid_size, cuda=True):
         self.grid_size = grid_size
-        temp_grid_size = self.grid_size
+        g = self.grid_size
+        FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
         self.stride = self.img_dim / self.grid_size
-        FloatTensor = torch.FloatTensor
-        grid = np.arange(grid_size)
-        a, b = np.meshgrid(grid, grid)
-
-        self.x_offset = torch.FloatTensor(a).view(-1, 1)
-        self.y_offset = torch.FloatTensor(b).view(-1, 1)
-
-        if CUDA:
-            self.x_offset = self.x_offset.cuda()
-            self.y_offset = self.y_offset
-            FloatTensor = FloatTensor.cuda()
-
+        # Calculate offsets for each grid
+        self.grid_x = torch.arange(g).repeat(g, 1).view([1, 1, g, g]).type(FloatTensor)
+        self.grid_y = torch.arange(g).repeat(g, 1).t().view([1, 1, g, g]).type(FloatTensor)
         self.scaled_anchors = FloatTensor([(a_w / self.stride, a_h / self.stride) for a_w, a_h in self.anchors])
-        self.anchor_w = self.scaled_anchors[:, 0, 1].view((1, self.num_anchors, 1, 1))
-        self.anchor_h = self.scaled_anchors[:, 1, 2].view((1, self.num_anchors, 1, 1))
+        self.anchor_w = self.scaled_anchors[:, 0:1].view((1, self.num_anchors, 1, 1))
+        self.anchor_h = self.scaled_anchors[:, 1:2].view((1, self.num_anchors, 1, 1))
 
-    def forward(self, x, img_dim=None, targets=None):
+    def forward(self, x, targets=None, img_dim=None):
+
+        # Tensors for cuda support
         FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
-        LongTensor = torch.cuda.LongTensor if x.is_cuda else torch.LongTensor
-        ByteTensor = torch.cuda.ByteTensor if x.is_cuda else torch.ByteTensor
+#        LongTensor = torch.cuda.LongTensor if x.is_cuda else torch.LongTensor
+#        ByteTensor = torch.cuda.ByteTensor if x.is_cuda else torch.ByteTensor
 
         self.img_dim = img_dim
         num_samples = x.size(0)
@@ -61,88 +71,83 @@ class YOLOLayer(nn.Module):
             .contiguous()
         )
 
-        #sigma na outpucie sieci
+        # Get outputs
+        x = torch.sigmoid(prediction[..., 0])  # Center x
+        y = torch.sigmoid(prediction[..., 1])  # Center y
+        w = prediction[..., 2]  # Width
+        h = prediction[..., 3]  # Height
+        pred_conf = torch.sigmoid(prediction[..., 4])  # Conf
+        pred_cls = torch.sigmoid(prediction[..., 5:])  # Cls pred.
 
-        x = torch.sigmoid(prediction[:, :, :, :, 0])
-        y = torch.sigmoid(prediction[:, :, :, :, 1])
-        width = torch.sigmoid(prediction[:, :, :, :, 2])
-        height = torch.sigmoid(prediction[:, :, :, :, 3])
-        pred_conf = torch.sigmoid(prediction[:, :, :, :, 4])
-        pred_classes = torch.sigmoid(prediction[:, :, :, :, 5:])
-
+        # If grid size does not match current we compute new offsets
         if grid_size != self.grid_size:
-            self.compute_grid_offsets(grid_size, x.is_cuda)
+            self.compute_grid_offsets(grid_size, cuda=x.is_cuda)
 
+        # Add offset and scale with anchors
         pred_boxes = FloatTensor(prediction[..., :4].shape)
-        pred_boxes[..., 0] = x.data + self.x_offset
-        pred_boxes[..., 1] = y.data + self.y_offset
-        pred_boxes[..., 2] = torch.exp(width.data) * self.anchor_w
-        pred_boxes[..., 3] = torch.exp(height.data) * self.anchor_h
+        pred_boxes[..., 0] = x.data + self.grid_x
+        pred_boxes[..., 1] = y.data + self.grid_y
+        pred_boxes[..., 2] = torch.exp(w.data) * self.anchor_w
+        pred_boxes[..., 3] = torch.exp(h.data) * self.anchor_h
 
         output = torch.cat(
             (
                 pred_boxes.view(num_samples, -1, 4) * self.stride,
                 pred_conf.view(num_samples, -1, 1),
-                pred_classes(num_samples, -1, self.num_classes),
+                pred_cls.view(num_samples, -1, self.num_classes),
             ),
             -1,
         )
-        targets = torch.cuda.FloatTensor([[0, 1, 0.5, 0.5, 0.1, 0.1], [1, 1, 0.25, 0.25, 0.05, 0.01]])
+
         if targets is None:
             return output, 0
         else:
-            iou_scores, class_mask, obj_mask, tx, ty, tw, th, tcls, tconf = build_targets(
+            iou_scores, class_mask, obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf = build_targets(
                 pred_boxes=pred_boxes,
-                pred_classes=pred_classes,
+                pred_cls=pred_cls,
                 target=targets,
                 anchors=self.scaled_anchors,
                 ignore_thres=self.ignore_thres,
             )
 
+            # Loss : Mask outputs to ignore non-existing objects (except with conf. loss)
+            loss_x = self.mse_loss(x[obj_mask], tx[obj_mask])
+            loss_y = self.mse_loss(y[obj_mask], ty[obj_mask])
+            loss_w = self.mse_loss(w[obj_mask], tw[obj_mask])
+            loss_h = self.mse_loss(h[obj_mask], th[obj_mask])
+            loss_conf_obj = self.bce_loss(pred_conf[obj_mask], tconf[obj_mask])
+            loss_conf_noobj = self.bce_loss(pred_conf[noobj_mask], tconf[noobj_mask])
+            loss_conf = self.obj_scale * loss_conf_obj + self.noobj_scale * loss_conf_noobj
+            loss_cls = self.bce_loss(pred_cls[obj_mask], tcls[obj_mask])
+            total_loss = loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls
 
-def build_targets(pred_boxes, pred_classes, target, anchors, ignore_thres):
-    FloatTensor = torch.cuda.FloatTensor if pred_boxes.is_cuda else torch.FloatTensor
-    ByteTensor = torch.cuda.ByteTensor if pred_boxes.is_cuda else torch.ByteTensor
+            # Metrics
+            cls_acc = 100 * class_mask[obj_mask].mean()
+            conf_obj = pred_conf[obj_mask].mean()
+            conf_noobj = pred_conf[noobj_mask].mean()
+            conf50 = (pred_conf > 0.5).float()
+            iou50 = (iou_scores > 0.5).float()
+            iou75 = (iou_scores > 0.75).float()
+            detected_mask = conf50 * class_mask * tconf
+            precision = torch.sum(iou50 * detected_mask) / (conf50.sum() + 1e-16)
+            recall50 = torch.sum(iou50 * detected_mask) / (obj_mask.sum() + 1e-16)
+            recall75 = torch.sum(iou75 * detected_mask) / (obj_mask.sum() + 1e-16)
 
-    nB = pred_boxes.size(0)
-    nA = pred_boxes.size(1)
-    nC = pred_classes.size(-1)
-    nG = pred_boxes.size(2)
+            self.metrics = {
+                "loss": to_cpu(total_loss).item(),
+                "x": to_cpu(loss_x).item(),
+                "y": to_cpu(loss_y).item(),
+                "w": to_cpu(loss_w).item(),
+                "h": to_cpu(loss_h).item(),
+                "conf": to_cpu(loss_conf).item(),
+                "cls": to_cpu(loss_cls).item(),
+                "cls_acc": to_cpu(cls_acc).item(),
+                "recall50": to_cpu(recall50).item(),
+                "recall75": to_cpu(recall75).item(),
+                "precision": to_cpu(precision).item(),
+                "conf_obj": to_cpu(conf_obj).item(),
+                "conf_noobj": to_cpu(conf_noobj).item(),
+                "grid_size": grid_size,
+            }
 
-    # Output tensors
-
-    obj_mask = ByteTensor(nB, nA, nG, nG).fill_(0)
-    noobj_mask = ByteTensor(nB, nA, nG, nG).fill_(1)
-    class_mask = FloatTensor(nB, nA, nG, nG).fill_(0)
-    iou_scores = FloatTensor(nB, nA, nG, nG).fill_(0)
-    tx = FloatTensor(nB, nA, nG, nG).fill_(0)
-    ty = FloatTensor(nB, nA, nG, nG).fill_(0)
-    tw = FloatTensor(nB, nA, nG, nG).fill_(0)
-    th = FloatTensor(nB, nA, nG, nG).fill_(0)
-    tcls = FloatTensor(nB, nA, nG, nG, nC).fill_(0)
-
-    # Convert to position relativa to box
-    target_boxes = target[:, 2:6] * nG
-    gxy = target_boxes[:, :2]
-    gwh = target_boxes[:, 2:]
-    # anchors
-    ious = torch.stack([bbox_wh_iou(anchor, gwh) for anchor in anchors])
-    return 0
-
-
-def bbox_wh_iou(wh1, wh2):
-    b1_w, b1_h = wh1[0], wh1[1]
-    b2_w, b2_h = wh2[:, [0]], wh2[:, [1]]
-    inter_w = torch.min(b1_w, b2_w)
-    inter_h = torch.min(b1_h, b2_h)
-    intersection = inter_w * inter_h
-
-    # union
-
-    b1_area = b1_w * b1_h
-    b2_area = b2_w * b2_h
-
-    iou = intersection / (b1_area + b2_area - intersection)
-
-    return iou.max()
-
+            return output, total_loss
