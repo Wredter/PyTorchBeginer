@@ -2,104 +2,105 @@ import torch
 import numpy as np
 
 
-def predict_transform(prediction, inp_dim, anchors, num_classes, CUDA = True):
-    batch_size = prediction.size(0)
-    stride = inp_dim // prediction.size(2)
-    grid_size = inp_dim // stride
-    bbox_attrs = 5 + num_classes
-    num_anchors = len(anchors)
-
-    prediction = prediction.view(batch_size, bbox_attrs * num_anchors, grid_size * grid_size)
-    prediction = prediction.transpose(1, 2).contiguous()
-    prediction = prediction.view(batch_size, grid_size * grid_size * num_anchors, bbox_attrs)
-    anchors = [(a[0] / stride, a[1] / stride) for a in anchors]
-
-    # Sigmoid the  centre_X, centre_Y. and object confidencce
-    prediction[:, :, 0] = torch.sigmoid(prediction[:, :, 0])
-    prediction[:, :, 1] = torch.sigmoid(prediction[:, :, 1])
-    prediction[:, :, 4] = torch.sigmoid(prediction[:, :, 4])
-
-    # Add the center offsets
-    grid = np.arange(grid_size)
-    a, b = np.meshgrid(grid, grid)
-
-    x_offset = torch.FloatTensor(a).view(-1, 1)
-    y_offset = torch.FloatTensor(b).view(-1, 1)
-
-    if CUDA:
-        x_offset = x_offset.cuda()
-        y_offset = y_offset.cuda()
-
-    x_y_offset = torch.cat((x_offset, y_offset), 1).repeat(1, num_anchors).view(-1, 2).unsqueeze(0)
-
-    prediction[:, :, :2] += x_y_offset
-
-    # log space transform height and the width
-    anchors = torch.FloatTensor(anchors)
-
-    if CUDA:
-        anchors = anchors.cuda()
-
-    anchors = anchors.repeat(grid_size * grid_size, 1).unsqueeze(0)
-    prediction[:, :, 2:4] = torch.exp(prediction[:, :, 2:4]) * anchors
-
-    prediction[:, :, 5: 5 + num_classes] = torch.sigmoid((prediction[:, :, 5: 5 + num_classes]))
-
-    prediction[:, :, :4] *= stride
-
-    return prediction
+def to_cpu(tensor):
+    return tensor.detach().cpu()
 
 
-def write_results(prediction, confidence, num_classes, target, imp_dim, nms_conf=0.4,):
-    conf_mask = (prediction[:, :, 4] > confidence).float().unsqueeze(2)
-    # prediction = prediction[:, :, 4:] * conf_mask
-
-    boxes = prediction.new(prediction.shape)
-    boxes[:, :, 0] = (prediction[:, :, 0] - prediction[:, :, 2] / 2)
-    boxes[:, :, 1] = (prediction[:, :, 1] - prediction[:, :, 3] / 2)
-    boxes[:, :, 2] = (prediction[:, :, 0] + prediction[:, :, 2] / 2)
-    boxes[:, :, 3] = (prediction[:, :, 1] + prediction[:, :, 3] / 2)
-    boxes[..., 4:] = prediction[..., 4:]
-
-    t_boxes = target.new(target.shape)
-    t_boxes[:, 0] = (target[:, 0] - target[:, 2] / 2) * imp_dim
-    t_boxes[:, 1] = (target[:, 1] - target[:, 3] / 2) * imp_dim
-    t_boxes[:, 2] = (target[:, 0] + target[:, 2] / 2) * imp_dim
-    t_boxes[:, 3] = (target[:, 1] + target[:, 3] / 2) * imp_dim
-    t_boxes[:, 4:] = target[:, 4:]
-
-    write = False
-
-    samples = prediction.size(0)
-
-    for sample in range(samples):
-        img_predictions = prediction[sample]
-        ious = bbox_iou(t_boxes[:, :4], img_predictions[:, :4])
-    return 0
+def bbox_wh_iou(wh1, wh2):
+    wh2 = wh2.t()
+    w1, h1 = wh1[0], wh1[1]
+    w2, h2 = wh2[0], wh2[1]
+    inter_area = torch.min(w1, w2) * torch.min(h1, h2)
+    union_area = (w1 * h1 + 1e-16) + w2 * h2 - inter_area
+    return inter_area / union_area
 
 
-def bbox_iou(box1, box2):
+def bbox_iou(box1, box2, x1y1x2y2=True):
     """
     Returns the IoU of two bounding boxes
     """
-    # Get the coordinates of bounding boxes
-    b1_x1, b1_y1, b1_x2, b1_y2 = box1[:, 0], box1[:, 1], box1[:, 2], box1[:, 3]
-    b2_x1, b2_y1, b2_x2, b2_y2 = box2[:, 0], box2[:, 1], box2[:, 2], box2[:, 3]
+    if not x1y1x2y2:
+        # Transform from center and width to exact coordinates
+        b1_x1, b1_x2 = box1[:, 0] - box1[:, 2] / 2, box1[:, 0] + box1[:, 2] / 2
+        b1_y1, b1_y2 = box1[:, 1] - box1[:, 3] / 2, box1[:, 1] + box1[:, 3] / 2
+        b2_x1, b2_x2 = box2[:, 0] - box2[:, 2] / 2, box2[:, 0] + box2[:, 2] / 2
+        b2_y1, b2_y2 = box2[:, 1] - box2[:, 3] / 2, box2[:, 1] + box2[:, 3] / 2
+    else:
+        # Get the coordinates of bounding boxes
+        b1_x1, b1_y1, b1_x2, b1_y2 = box1[:, 0], box1[:, 1], box1[:, 2], box1[:, 3]
+        b2_x1, b2_y1, b2_x2, b2_y2 = box2[:, 0], box2[:, 1], box2[:, 2], box2[:, 3]
 
     # get the corrdinates of the intersection rectangle
     inter_rect_x1 = torch.max(b1_x1, b2_x1)
     inter_rect_y1 = torch.max(b1_y1, b2_y1)
     inter_rect_x2 = torch.min(b1_x2, b2_x2)
     inter_rect_y2 = torch.min(b1_y2, b2_y2)
-
     # Intersection area
-    inter_area = torch.clamp(inter_rect_x2 - inter_rect_x1 + 1, min=0) * torch.clamp(inter_rect_y2 - inter_rect_y1 + 1,
-                                                                                     min=0)
-
+    inter_area = torch.clamp(inter_rect_x2 - inter_rect_x1 + 1, min=0) * torch.clamp(
+        inter_rect_y2 - inter_rect_y1 + 1, min=0
+    )
     # Union Area
     b1_area = (b1_x2 - b1_x1 + 1) * (b1_y2 - b1_y1 + 1)
     b2_area = (b2_x2 - b2_x1 + 1) * (b2_y2 - b2_y1 + 1)
 
-    iou = inter_area / (b1_area + b2_area - inter_area)
+    iou = inter_area / (b1_area + b2_area - inter_area + 1e-16)
 
     return iou
+
+
+def build_targets(pred_boxes, pred_cls, target, anchors, ignore_thres):
+
+    BoolTensor = torch.cuda.BoolTensor if pred_boxes.is_cuda else torch.BoolTensor
+    FloatTensor = torch.cuda.FloatTensor if pred_boxes.is_cuda else torch.FloatTensor
+
+    nB = pred_boxes.size(0)
+    nA = pred_boxes.size(1)
+    nC = pred_cls.size(-1)
+    nG = pred_boxes.size(2)
+
+    # Output tensors
+    obj_mask = BoolTensor(nB, nA, nG, nG).fill_(0)
+    noobj_mask = BoolTensor(nB, nA, nG, nG).fill_(1)
+    class_mask = FloatTensor(nB, nA, nG, nG).fill_(0)
+    iou_scores = FloatTensor(nB, nA, nG, nG).fill_(0)
+    tx = FloatTensor(nB, nA, nG, nG).fill_(0)
+    ty = FloatTensor(nB, nA, nG, nG).fill_(0)
+    tw = FloatTensor(nB, nA, nG, nG).fill_(0)
+    th = FloatTensor(nB, nA, nG, nG).fill_(0)
+    tcls = FloatTensor(nB, nA, nG, nG, nC).fill_(0)
+
+    # Convert to position relative to box
+    target_boxes = target[:, 2:6] * nG
+    gxy = target_boxes[:, :2]
+    gwh = target_boxes[:, 2:]
+    # Get anchors with best iou
+    ious = torch.stack([bbox_wh_iou(anchor, gwh) for anchor in anchors])
+    best_ious, best_n = ious.max(0)
+    # Separate target values
+    b, target_labels = target[:, :2].long().t()
+    gx, gy = gxy.t()
+    gw, gh = gwh.t()
+    gi, gj = gxy.long().t()
+    # Set masks
+    obj_mask[b, best_n, gj, gi] = 1
+    noobj_mask[b, best_n, gj, gi] = 0
+
+    # Set noobj mask to zero where iou exceeds ignore threshold
+    for i, anchor_ious in enumerate(ious.t()):
+        noobj_mask[b[i], anchor_ious > ignore_thres, gj[i], gi[i]] = 0
+
+    # Coordinates
+    tx[b, best_n, gj, gi] = gx - gx.floor()
+    ty[b, best_n, gj, gi] = gy - gy.floor()
+    # Width and height
+    tw[b, best_n, gj, gi] = torch.log(gw / anchors[best_n][:, 0] + 1e-16)
+    th[b, best_n, gj, gi] = torch.log(gh / anchors[best_n][:, 1] + 1e-16)
+    # One-hot encoding of label
+    tcls[b, best_n, gj, gi, target_labels] = 1
+    # Compute label correctness and iou at best anchor
+    class_mask[b, best_n, gj, gi] = (pred_cls[b, best_n, gj, gi].argmax(-1) == target_labels).float()
+    iou_scores[b, best_n, gj, gi] = bbox_iou(pred_boxes[b, best_n, gj, gi], target_boxes, x1y1x2y2=False)
+
+    tconf = obj_mask.float()
+    return iou_scores, class_mask, obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf
+
