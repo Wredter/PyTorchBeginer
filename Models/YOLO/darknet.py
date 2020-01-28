@@ -1,4 +1,7 @@
 from __future__ import division
+
+import pydicom
+
 from Models.YOLO.config.parser import *
 from Models.YOLO.utility import *
 import torch
@@ -7,11 +10,18 @@ import cv2
 import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
+import matplotlib.pyplot as mpl
 
 
 def get_test_input():
-    img = cv2.imread("dog-cycle-car.png")
+#    img = cv2.imread("dog-cycle-car.png")
+    ds = pydicom.dcmread("000000.dcm")
+
+# get the pixel information into a numpy array
+    img = ds.pixel_array
     img = cv2.resize(img, (416, 416))          #Resize to the input dimension
+    mpl.imshow(img)
+    mpl.show()
     img_ = img[:, :, ::-1].transpose((2, 0, 1))  # BGR -> RGB | H X W C -> C X H X W
     img_ = img_[np.newaxis, :, :, :]/255.0       #Add a channel at 0 (for batch) | Normalise
     img_ = torch.from_numpy(img_).float()     #Convert to float

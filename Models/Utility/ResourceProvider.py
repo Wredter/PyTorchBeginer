@@ -212,7 +212,7 @@ class ResourceProvider:
                 datalist.append(data_cell)
                 print("To już " + str(img) + "obrazek oby tak dalej")
         x = os.getcwd()
-        x += "\\Data\\preped_data.csv"
+        x += "\\Data\\preped_data_mass.csv"
         with open(x, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(datalist)
