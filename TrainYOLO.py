@@ -1,42 +1,37 @@
 from __future__ import print_function, division
-import matplotlib.pyplot as plt
-import os
-import sys
-import time
-import datetime
-import argparse
 
-import torch
-from torch.utils.data import DataLoader
-from torchvision import datasets
-from torchvision import transforms
-from torch.autograd import Variable
-import torch.optim as optim
 from terminaltables import AsciiTable
+from torch.autograd import Variable
+from torch.utils.data import DataLoader
 
-from Models.Utility.ResourceProvider import *
 from Models.Utility.DataSets import ImgDataset
+from Models.Utility.ResourceProvider import *
 from Models.YOLO.darknet import Darknet
+from Models.YOLO.utility import *
+from TestYOLO import evaluate
 
 if __name__ == "__main__":
-    y = os.getcwd()
-    y += "\\Data\\preped_data_mass.csv"
+    train = os.getcwd()
+    train += "\\Data\\preped_data_mass_train.csv"
+    test = os.getcwd()
+    test += "\\Data\\preped_data_mass_test.csv"
     x = os.getcwd()
     x += "/Models/YOLO/config/yolov3.cfg"
     # test = ResourceProvider(y, "D:\\DataSet\\CBIS-DDSM\\", "D:\\DataSet\\ROI\\CBIS-DDSM\\")
+    class_names = ["patologia"]
 
-    device = "cuda"
-    evaluation_interval = 1
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    evaluation_interval = 10
 
     model = Darknet(x).to(device)
-    ds = ImgDataset(csv_file=y)
+    ds = ImgDataset(csv_file=train)
     img_size = 416
 
     dataloader = torch.utils.data.DataLoader(
         ds,
-        batch_size=64,
+        batch_size=8,
         shuffle=True,
-        num_workers=0,
+        num_workers=1,
         pin_memory=True,
         collate_fn=ds.collate_fn,
     )
@@ -105,3 +100,33 @@ if __name__ == "__main__":
             print(log_str)
 
             model.seen += imgs.size(0)
+
+            if epoch % evaluation_interval == 0:
+                print("\n---- Evaluating Model ----")
+                # Evaluate the model on the validation set
+                precision, recall, AP, f1, ap_class = evaluate(
+                    model,
+                    path=test,
+                    iou_thres=0.5,
+                    conf_thres=0.5,
+                    nms_thres=0.5,
+                    img_size=416,
+                    batch_size=8,
+                )
+                evaluation_metrics = [
+                    ("val_precision", precision.mean()),
+                    ("val_recall", recall.mean()),
+                    ("val_mAP", AP.mean()),
+                    ("val_f1", f1.mean()),
+                ]
+
+                # Print class APs and mAP
+                ap_table = [["Index", "Class name", "AP"]]
+                for i, c in enumerate(ap_class):
+                    ap_table += [[c, class_names[c], "%.5f" % AP[i]]]
+                print(AsciiTable(ap_table).table)
+                print(f"---- mAP {AP.mean()}")
+
+    z = os.getcwd()
+    z += "\\Models\\YOLO\\TrainedModel\\Yolov3.pth"
+    torch.save(model.state_dict(), z)
