@@ -22,6 +22,7 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     evaluation_interval = 10
+    epochs = 100
 
     model = Darknet(x).to(device)
     ds = ImgDataset(csv_file=train)
@@ -55,7 +56,7 @@ if __name__ == "__main__":
         "conf_noobj",
     ]
 
-    for epoch in range(100):
+    for epoch in range(epochs):
         model.train()
         for batch_i, (imgs, targets) in enumerate(dataloader):
             batches_done = len(dataloader) * epoch + batch_i
@@ -75,7 +76,7 @@ if __name__ == "__main__":
             #   Log progress
             # ----------------
 
-            log_str = "\n---- [Epoch %d/%d, Batch %d/%d] ----\n" % (epoch, 100, batch_i, len(dataloader))
+            log_str = "\n---- [Epoch %d/%d, Batch %d/%d] ----\n" % (epoch, epochs, batch_i, len(dataloader))
 
             metric_table = [["Metrics", *[f"YOLO Layer {i}" for i in range(len(model.yolo_layers))]]]
 
@@ -101,31 +102,31 @@ if __name__ == "__main__":
 
             model.seen += imgs.size(0)
 
-            if epoch % evaluation_interval == 0:
-                print("\n---- Evaluating Model ----")
-                # Evaluate the model on the validation set
-                precision, recall, AP, f1, ap_class = evaluate(
-                    model,
-                    path=test,
-                    iou_thres=0.5,
-                    conf_thres=0.5,
-                    nms_thres=0.5,
-                    img_size=416,
-                    batch_size=8,
-                )
-                evaluation_metrics = [
-                    ("val_precision", precision.mean()),
-                    ("val_recall", recall.mean()),
-                    ("val_mAP", AP.mean()),
-                    ("val_f1", f1.mean()),
-                ]
+        if epoch % evaluation_interval == 0:
+            print("\n---- Evaluating Model ----")
+            # Evaluate the model on the validation set
+            precision, recall, AP, f1, ap_class = evaluate(
+                model,
+                path=test,
+                iou_thres=0.5,
+                conf_thres=0.5,
+                nms_thres=0.5,
+                img_size=416,
+                batch_size=1,
+            )
+            evaluation_metrics = [
+                ("val_precision", precision.mean()),
+                ("val_recall", recall.mean()),
+                ("val_mAP", AP.mean()),
+                ("val_f1", f1.mean()),
+            ]
 
-                # Print class APs and mAP
-                ap_table = [["Index", "Class name", "AP"]]
-                for i, c in enumerate(ap_class):
-                    ap_table += [[c, class_names[c], "%.5f" % AP[i]]]
-                print(AsciiTable(ap_table).table)
-                print(f"---- mAP {AP.mean()}")
+            # Print class APs and mAP
+            ap_table = [["Index", "Class name", "AP"]]
+            for i, c in enumerate(ap_class):
+                ap_table += [[c, class_names[c], "%.5f" % AP[i]]]
+            print(AsciiTable(ap_table).table)
+            print(f"---- mAP {AP.mean()}")
 
     z = os.getcwd()
     z += "\\Models\\YOLO\\TrainedModel\\Yolov3.pth"

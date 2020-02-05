@@ -18,7 +18,7 @@ class ImgDataset(Dataset):
     def __init__(self, csv_file, img_size=416, normalized_labels=True,mod=None):
         self.img_data = pd.read_csv(csv_file)
         self.img_size = img_size
-        self.normalized_labels = True
+        self.normalized_labels = normalized_labels
         self.batch_count = 0
         self.mod = mod
 
