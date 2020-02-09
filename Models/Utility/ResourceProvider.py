@@ -66,16 +66,19 @@ class ResourceProvider:
                     line_count += 1
         return self.rows
 
-    def read_dicom_file(self, row_number):
+    def read_dicom_file(self, row_number, return_pixel_array):
         img_path = self.datapath
         roi_path = self.roipath
+        crop_path = self.roipath
         img_path = img_path + self.rows[row_number][11]
-        roi_path = roi_path + self.rows[row_number][12].replace("\n", "")
-        dicom_img = dim.dcmread(img_path)
-        dicom_roi = dim.dcmread(roi_path)
-        print(dicom_img.pixel_array.__len__())
-        print(dicom_roi.pixel_array.__len__())
-        return dicom_img.pixel_array, dicom_roi.pixel_array
+        crop_path += self.rows[row_number][12]
+        roi_path = roi_path + self.rows[row_number][13].replace("\n", "")
+        if return_pixel_array:
+            d_image, d_roi, img_path, roi_path = self.compare_img(img_path, crop_path, roi_path, return_pixel_array)
+            return d_image.pixel_array, d_roi.pixel_array, img_path, roi_path
+        else:
+            img_path, roi_path = self.compare_img(img_path, crop_path, roi_path, return_pixel_array)
+            return img_path, roi_path
 
     def compare_img(self, img_path, crop_path, roi_path, return_pixel_array):
         dicom_img = dim.dcmread(img_path)

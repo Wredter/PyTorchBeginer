@@ -7,7 +7,9 @@ import tqdm
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from Models.Utility.DataSets import ImgDataset
-from Models.SSD.SSD import *
+from Models.RetinaNet.RetinaNet import *
+from Models.RetinaNet.Loss import *
+
 
 if __name__ == "__main__":
     train = os.getcwd()
@@ -22,13 +24,14 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     evaluation_interval = 10
     epochs = 100
-    img_size = 300
-    model = SSD300().to(device)
+    batch_size = 1
+    img_size = 800
+    model = RetinaNet().to(device)
     ds = ImgDataset(csv_file=train, img_size=img_size)
 
     dataloader = torch.utils.data.DataLoader(
         ds,
-        batch_size=8,
+        batch_size=batch_size,
         shuffle=True,
         num_workers=1,
         pin_memory=True,
@@ -38,19 +41,32 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters())
     dataloader = torch.utils.data.DataLoader(
             ds,
-            batch_size=8,
+            batch_size=batch_size,
             shuffle=True,
             num_workers=1,
             pin_memory=True,
             collate_fn=ds.collate_fn,
         )
+    model.train()
+    criterion = FocalLoss()
+    for epoch in range(epochs):
+        total_loss = 0
+        for batch_i, (imgs, targets) in enumerate(dataloader):
 
-    for batch_i, (imgs, targets) in enumerate(dataloader):
+            imgs = Variable(imgs.to(device))
+            targets = Variable(targets.to(device), requires_grad=False)
+            loc_targets = targets[:, 2:]
+            cls_targets = targets[:, :1]
 
-        imgs = Variable(imgs.to(device))
-        targets = Variable(targets.to(device), requires_grad=False)
+            optimizer.zero_grad()
 
-        pos, cls = model(imgs)
-        for x in range(0, 8):
-            print(pos[x, ...])
-            print(cls[x, ...])
+            pos, cls = model(imgs)
+            loc_loss, cls_loss = criterion(pos, loc_targets, cls, cls_targets)
+            loss = loc_loss + cls_loss
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        print("Epoch: " + str(epoch) + " Total loss: " + str(total_loss))
+
+
+
