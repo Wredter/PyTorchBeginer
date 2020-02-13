@@ -3,7 +3,6 @@ import csv
 import pydicom as dim
 import matplotlib.pyplot as plt
 
-from sympy import Matrix
 # ############# ROWS ###########################
 # 0  patient ID
 # 1  breast_density
@@ -67,27 +66,38 @@ class ResourceProvider:
                     line_count += 1
         return self.rows
 
-    def read_dicom_file(self, row_number):
+    def read_dicom_file(self, row_number, return_pixel_array):
         img_path = self.datapath
         roi_path = self.roipath
+        crop_path = self.roipath
         img_path = img_path + self.rows[row_number][11]
-        roi_path = roi_path + self.rows[row_number][12].replace("\n", "")
-        dicom_img = dim.dcmread(img_path)
-        dicom_roi = dim.dcmread(roi_path)
-        print(dicom_img.pixel_array.__len__())
-        print(dicom_roi.pixel_array.__len__())
-        return dicom_img.pixel_array, dicom_roi.pixel_array
+        crop_path += self.rows[row_number][12]
+        roi_path = roi_path + self.rows[row_number][13].replace("\n", "")
+        if return_pixel_array:
+            d_image, d_roi, img_path, roi_path = self.compare_img(img_path, crop_path, roi_path, return_pixel_array)
+            return d_image.pixel_array, d_roi.pixel_array, img_path, roi_path
+        else:
+            img_path, roi_path = self.compare_img(img_path, crop_path, roi_path, return_pixel_array)
+            return img_path, roi_path
 
-    def compare_img(self, img_path, crop_path,roi_path):
+    def compare_img(self, img_path, crop_path, roi_path, return_pixel_array):
         dicom_img = dim.dcmread(img_path)
         dicom_crop = dim.dcmread(crop_path)
         dicom_roi = dim.dcmread(roi_path)
-        if dicom_img.pixel_array.size == dicom_roi.pixel_array.size:
-            return dicom_img, dicom_roi, img_path, roi_path
-        elif dicom_img.pixel_array.size == dicom_crop.pixel_array.size:
-            return dicom_img, dicom_crop, img_path, crop_path
+        if return_pixel_array:
+            if dicom_img.pixel_array.size == dicom_roi.pixel_array.size:
+                return dicom_img, dicom_roi, img_path, roi_path
+            elif dicom_img.pixel_array.size == dicom_crop.pixel_array.size:
+                return dicom_img, dicom_crop, img_path, crop_path
+            else:
+                return 0, 0, 0, 0
         else:
-            return 0, 0, 0, 0
+            if dicom_img.pixel_array.size == dicom_roi.pixel_array.size:
+                return img_path, roi_path
+            elif dicom_img.pixel_array.size == dicom_crop.pixel_array.size:
+                return img_path, crop_path
+            else:
+                return 0, 0
 
     def clear_txt(self):
         for img in self.rows:
@@ -130,7 +140,7 @@ class ResourceProvider:
             crop_path += self.rows[omage][12]
             roi_path += self.roipath
             roi_path += self.rows[omage][13].replace("\n", "")
-            img, roi, img_path, roi_path = self.compare_img(img_path, crop_path, roi_path)
+            img, roi, img_path, roi_path = self.compare_img(img_path, crop_path, roi_path, True)
             if img != 0 and roi != 0:
                 gt_img = roi.pixel_array
                 y_size, x_size = gt_img.shape
@@ -177,3 +187,36 @@ class ResourceProvider:
             print("Zostało jeszcze " + str(len(self.rows) - row))
 
         print("udało sie porównać " + udalo.__str__() + " obrazów, jebło: " + jeblo.__str__())
+
+    def prepare_data(self):
+        self.read()
+        datalist = []
+        for img in self.rows:
+            data_cell = []
+            img_path = ""
+            crop_path = ""
+            roi_path = ""
+            img_path += self.datapath
+            img_path += self.rows[img][11]
+            crop_path += self.roipath
+            crop_path += self.rows[img][12]
+            roi_path += self.roipath
+            roi_path += self.rows[img][13].replace("\n", "")
+            img_path, roi_path = self.compare_img(img_path, crop_path, roi_path, False)
+            if img_path != 0 and roi_path != 0:
+                data_cell.append(img_path)
+                path = roi_path.replace(".dcm", ".txt")
+                f = open(path, "r")
+                line = f.read()
+                f.close()
+                elem = line.split(",")
+                elem.insert(0, 0)
+                data_cell.append(elem)
+                datalist.append(data_cell)
+                print("To już " + str(img) + "obrazek oby tak dalej")
+        x = os.getcwd()
+        x += "\\Data\\preped_data_mass.csv"
+        with open(x, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(datalist)
+        return datalist
