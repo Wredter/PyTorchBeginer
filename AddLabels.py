@@ -3,7 +3,6 @@ from Models.YOLO.config.parser import parse_cfg, create_modules
 from Models.YOLO.darknet import *
 import os
 from Models.Utility.ResourceProvider import *
-from Models.Utility.DataLoader import test_dicom_reader
 import matplotlib.pyplot as plt
 
 #x = os.getcwd()

@@ -6,8 +6,10 @@ import torch
 import tqdm
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
-from Models.Utility.DataSets import ImgDataset
+from Models.Utility.DataSets import SSDDataset
 from Models.SSD.SSD import *
+import torch.optim as optim
+import logging as log
 
 
 if __name__ == "__main__":
@@ -24,53 +26,51 @@ if __name__ == "__main__":
     evaluation_interval = 10
     epochs = 100
     img_size = 300
-    model = SSD300().to(device)
-    ds = ImgDataset(csv_file=train, img_size=img_size)
-
-
+    learning_rate = 0.001
+    momentum = 0.9
+    weight_decay = 0.0005
+    model = build_ssd(img_size)
+    model.to(device)
+    ds = SSDDataset(csv_file=train, img_size=img_size)
     dataloader = torch.utils.data.DataLoader(
         ds,
         batch_size=8,
         shuffle=True,
-        num_workers=1,
+        num_workers=2,
         pin_memory=True,
         collate_fn=ds.collate_fn,
     )
 
-    optimizer = torch.optim.Adam(model.parameters())
+    optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum,
+                          weight_decay=weight_decay)
+    criterion = MultiBoxLoss(cfg['num_classes'], 0.5, True, 0, True, 3, 0.5,
+                             False, torch.cuda.is_available())
 
-    start_epoch = 0
+    model.train()
     iteration = 0
+    loc_loss = 0
+    conf_loss = 0
+    epoch = 0
 
-    for epoch in range(start_epoch, epochs):
-        start_epoch_time = time.time()
-        scheduler.step()
-        iteration = train_loop_func(ssd300, loss_func, epoch, optimizer, train_loader, val_dataloader, encoder,
-                                    iteration,
-                                    logger, args, mean, std)
-        end_epoch_time = time.time() - start_epoch_time
-        total_time += end_epoch_time
+    for epoch in range(0, epochs):
+        for batch_i, (imgs, targets) in enumerate(dataloader):
+            imgs = Variable(imgs.to(device))
+            targets = Variable(targets.to(device), requires_grad=False)
 
-        if args.local_rank == 0:
-            logger.update_epoch_time(epoch, end_epoch_time)
+            loc_loss = 0
+            conf_loss = 0
+            epoch += 1
+            out = model(imgs)
 
-        if epoch in args.evaluation:
-            acc = evaluate(ssd300, val_dataloader, cocoGt, encoder, inv_map, args)
+            optimizer.zero_grad()
 
-            if args.local_rank == 0:
-                logger.update_epoch(epoch, acc)
-
-        if args.save and args.local_rank == 0:
-            print("saving model...")
-            obj = {'epoch': epoch + 1,
-                   'iteration': iteration,
-                   'optimizer': optimizer.state_dict(),
-                   'scheduler': scheduler.state_dict(),
-                   'label_map': val_dataset.label_info}
-            if args.distributed:
-                obj['model'] = ssd300.module.state_dict()
-            else:
-                obj['model'] = ssd300.state_dict()
-            torch.save(obj, './models/epoch_{}.pt'.format(epoch))
-        train_loader.reset()
-    print('total training time: {}'.format(total_time))
+            l_loss, c_loss = criterion(out, targets)
+            loss = l_loss + c_loss
+            loss.backward()
+            optimizer.step()
+            loc_loss += l_loss.data[0]
+            conf_loss += c_loss.data[0]
+            log.info("batch: f'{batch_i} loss: f'{loss}")
+    z = os.getcwd()
+    z += "\\Models\\SSD\\TrainedModel\\SSD.pth"
+    torch.save(model.state_dict(), z)
