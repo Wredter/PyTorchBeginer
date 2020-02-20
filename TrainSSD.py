@@ -6,6 +6,8 @@ import torch
 import tqdm
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
+from Models.SSD.DefaultsBox import dboxes300
+from Models.SSD.Utility import *
 from Models.Utility.DataSets import ImgDataset
 from Models.SSD.SSD import *
 
@@ -24,13 +26,14 @@ if __name__ == "__main__":
     evaluation_interval = 10
     epochs = 100
     img_size = 300
+    batch_size = 8
+
     model = SSD300().to(device)
     ds = ImgDataset(csv_file=train, img_size=img_size)
 
-
     dataloader = torch.utils.data.DataLoader(
         ds,
-        batch_size=8,
+        batch_size=batch_size,
         shuffle=True,
         num_workers=1,
         pin_memory=True,
@@ -41,36 +44,19 @@ if __name__ == "__main__":
 
     start_epoch = 0
     iteration = 0
-
+    bboxes = BoundingBox()
     for epoch in range(start_epoch, epochs):
-        start_epoch_time = time.time()
-        scheduler.step()
-        iteration = train_loop_func(ssd300, loss_func, epoch, optimizer, train_loader, val_dataloader, encoder,
-                                    iteration,
-                                    logger, args, mean, std)
-        end_epoch_time = time.time() - start_epoch_time
-        total_time += end_epoch_time
+        for batch_i, (imgs, targets) in enumerate(dataloader):
 
-        if args.local_rank == 0:
-            logger.update_epoch_time(epoch, end_epoch_time)
+            imgs = Variable(imgs.to(device))
+            targets = Variable(targets.to(device), requires_grad=False)
+            # locations of targets
+            targets_loc = targets[..., 2:]
+            # classes 0 for first
+            targets_c = targets[..., 1]
+            ploc, plabel = model(imgs)
 
-        if epoch in args.evaluation:
-            acc = evaluate(ssd300, val_dataloader, cocoGt, encoder, inv_map, args)
+            t_bbox = dboxes300()
 
-            if args.local_rank == 0:
-                logger.update_epoch(epoch, acc)
-
-        if args.save and args.local_rank == 0:
-            print("saving model...")
-            obj = {'epoch': epoch + 1,
-                   'iteration': iteration,
-                   'optimizer': optimizer.state_dict(),
-                   'scheduler': scheduler.state_dict(),
-                   'label_map': val_dataset.label_info}
-            if args.distributed:
-                obj['model'] = ssd300.module.state_dict()
-            else:
-                obj['model'] = ssd300.state_dict()
-            torch.save(obj, './models/epoch_{}.pt'.format(epoch))
-        train_loader.reset()
-    print('total training time: {}'.format(total_time))
+            x = compare_prediction_with_bbox(ploc, t_bbox, targets_loc, targets_c, 0.5)
+            print(x)

@@ -19,7 +19,7 @@ from torchvision.models.resnet import resnet18, resnet34, resnet50, resnet101, r
 
 class ResNet(nn.Module):
     def __init__(self, backbone='resnet50', backbone_path=None):
-        super().__init__()
+        super(ResNet, self).__init__()
         if backbone == 'resnet18':
             backbone = resnet18(pretrained=not backbone_path)
             self.out_channels = [256, 512, 512, 256, 256, 128]
@@ -54,10 +54,8 @@ class ResNet(nn.Module):
 
 class SSD300(nn.Module):
     def __init__(self, backbone=ResNet('resnet50')):
-        super().__init__()
-
+        super(SSD300, self).__init__()
         self.feature_extractor = backbone
-
         self.label_num = 1  # number of COCO classes
         self._build_additional_features(self.feature_extractor.out_channels)
         self.num_defaults = [4, 6, 6, 6, 4, 4]
@@ -65,8 +63,14 @@ class SSD300(nn.Module):
         self.conf = []
 
         for nd, oc in zip(self.num_defaults, self.feature_extractor.out_channels):
-            self.loc.append(nn.Conv2d(oc, nd * 4, kernel_size=3, padding=1))
-            self.conf.append(nn.Conv2d(oc, nd * self.label_num, kernel_size=3, padding=1))
+            self.loc.append(
+                nn.Sequential(
+                    nn.Conv2d(oc, nd * 4, kernel_size=3, padding=1),
+                    nn.ReLU(inplace=True)))
+            self.conf.append(
+                nn.Sequential(
+                    nn.Conv2d(oc, nd * self.label_num, kernel_size=3, padding=1),
+                    nn.ReLU(inplace=True)))
 
         self.loc = nn.ModuleList(self.loc)
         self.conf = nn.ModuleList(self.conf)
@@ -108,10 +112,10 @@ class SSD300(nn.Module):
     def bbox_view(self, src, loc, conf):
         ret = []
         for s, l, c in zip(src, loc, conf):
-            ret.append((l(s).view(s.size(0), 4, -1), c(s).view(s.size(0), self.label_num, -1)))
+            ret.append((l(s).view(s.size(0), -1, 4), c(s).view(s.size(0), -1, self.label_num)))
 
         locs, confs = list(zip(*ret))
-        locs, confs = torch.cat(locs, 2).contiguous(), torch.cat(confs, 2).contiguous()
+        locs, confs = torch.cat(locs, 1).contiguous(), torch.cat(confs, 1).contiguous()
         return locs, confs
 
     def forward(self, x):
@@ -142,7 +146,7 @@ class Loss(nn.Module):
         self.scale_wh = 1.0/dboxes.scale_wh
 
         self.sl1_loss = nn.SmoothL1Loss(reduce=False)
-        self.dboxes = nn.Parameter(dboxes(order="xywh").transpose(0, 1).unsqueeze(dim = 0),
+        self.dboxes = nn.Parameter(dboxes(order="xywh").transpose(0, 1).unsqueeze(dim=0),
             requires_grad=False)
         # Two factor are from following links
         # http://jany.st/post/2017-11-05-single-shot-detector-ssd-from-scratch-in-tensorflow.html

@@ -133,3 +133,5 @@ dmypy.json
 .idea
 # CSV
 *.csv
+# Trainded models
+*.pth
