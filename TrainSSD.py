@@ -4,11 +4,12 @@ import os
 
 import torch
 import tqdm
+import logging
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from Models.SSD.DefaultsBox import dboxes300
 from Models.SSD.Utility import *
-from Models.Utility.DataSets import ImgDataset
+from Models.Utility.DataSets import SSDDataset
 from Models.SSD.SSD import *
 
 
@@ -29,7 +30,9 @@ if __name__ == "__main__":
     batch_size = 8
 
     model = SSD300().to(device)
-    ds = ImgDataset(csv_file=train, img_size=img_size)
+
+    # na przyszłość nie robić tak jak zrobiłem to głupie i działa tylko dla konkretnego przypadku
+    ds = SSDDataset(csv_file=train, img_size=img_size)
 
     dataloader = torch.utils.data.DataLoader(
         ds,
@@ -44,19 +47,32 @@ if __name__ == "__main__":
 
     start_epoch = 0
     iteration = 0
-    bboxes = BoundingBox()
+    t_bbox = dboxes300()
+    loss_func = Loss(t_bbox)
     for epoch in range(start_epoch, epochs):
+        loss = 0
         for batch_i, (imgs, targets) in enumerate(dataloader):
 
             imgs = Variable(imgs.to(device))
             targets = Variable(targets.to(device), requires_grad=False)
             # locations of targets
-            targets_loc = targets[..., 2:]
+            targets_loc = targets[..., :4]
             # classes 0 for first
-            targets_c = targets[..., 1]
+            targets_c = targets[:, :, -1]
             ploc, plabel = model(imgs)
 
-            t_bbox = dboxes300()
+            loc_t, conf_t = compare_prediction_with_bbox(ploc, t_bbox(order="ltrb").to(device), targets_loc, targets_c, 0.5)
 
-            x = compare_prediction_with_bbox(ploc, t_bbox, targets_loc, targets_c, 0.5)
-            print(x)
+            loc_t = Variable(loc_t, requires_grad=False)
+            conf_t = Variable(conf_t, requires_grad=False)
+
+            transpose_ploc = ploc.transpose(1, 2).contiguous()
+            transpose_loc_t = loc_t.transpose(1, 2).contiguous()
+
+            loss = loss_func(ploc, plabel, loc_t, conf_t)
+            logging.info("Epoch: f'{epoch} Total loss : f'{loss}")
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+
+

@@ -138,6 +138,7 @@ class SSDDataset(Dataset):
         boxes = np.asarray(boxes)
         boxes = boxes.astype(np.float)
         boxes = torch.from_numpy(boxes.reshape(-1, 5))
+        classes = boxes[:, 0] * 1
         x1 = w_factor * (boxes[:, 1] - boxes[:, 3] / 2)
         y1 = h_factor * (boxes[:, 2] - boxes[:, 4] / 2)
         x2 = w_factor * (boxes[:, 1] + boxes[:, 3] / 2)
@@ -152,11 +153,9 @@ class SSDDataset(Dataset):
         boxes[:, 1] = ((y1 + y2) / 2) / padded_h
         boxes[:, 2] = (boxes[:, 3]*w_factor) / padded_w
         boxes[:, 3] = (boxes[:, 4]*h_factor) / padded_h
-        boxes[:, 4] = 1
-
-        targets = torch.zeros((len(boxes), 1, 5))
-        for batch in range(len(boxes)):
-            targets[batch, 0] = boxes[batch, :]
+        boxes[:, 4] = classes
+        targets = torch.zeros((1, len(boxes), 5))
+        targets[0] = boxes
         return image, targets
 
     def collate_fn(self, batch):
