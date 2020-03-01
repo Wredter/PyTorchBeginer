@@ -46,7 +46,7 @@ class ResourceProvider:
                     for column_name in row:
                         self.columns[column_name] = []
                 else:
-                    line_count +=1
+                    line_count += 1
                     row_count = 0
                     for key in self.columns:
                         self.columns[key].append(row[row_count])

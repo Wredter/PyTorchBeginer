@@ -38,7 +38,7 @@ if __name__ == "__main__":
         ds,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=1,
+        num_workers=2,
         pin_memory=True,
         collate_fn=ds.collate_fn,
     )
@@ -48,31 +48,59 @@ if __name__ == "__main__":
     start_epoch = 0
     iteration = 0
     t_bbox = dboxes300()
-    loss_func = Loss(t_bbox)
+    loss_func = Loss(t_bbox).to(device)
     for epoch in range(start_epoch, epochs):
-        loss = 0
         for batch_i, (imgs, targets) in enumerate(dataloader):
-
             imgs = Variable(imgs.to(device))
             targets = Variable(targets.to(device), requires_grad=False)
             # locations of targets
             targets_loc = targets[..., :4]
             # classes 0 for first
-            targets_c = targets[:, :, -1]
+            targets_c = targets[..., -1]
             ploc, plabel = model(imgs)
 
-            loc_t, conf_t = compare_prediction_with_bbox(ploc, t_bbox(order="ltrb").to(device), targets_loc, targets_c, 0.5)
+            loc_t, conf_t = compare_prediction_with_bbox(t_bbox(order='ltrb').to(device),
+                                                         targets_loc,
+                                                         targets_c,
+                                                         0.25,
+                                                         t_bbox.variance)
 
-            loc_t = Variable(loc_t, requires_grad=False)
-            conf_t = Variable(conf_t, requires_grad=False)
-
+            loc_t = Variable(loc_t.to(device), requires_grad=False)
+            conf_t = Variable(conf_t.to(device), requires_grad=False)
             transpose_ploc = ploc.transpose(1, 2).contiguous()
+            transpose_plabel = ploc.transpose(1, 2).contiguous()
             transpose_loc_t = loc_t.transpose(1, 2).contiguous()
 
-            loss = loss_func(ploc, plabel, loc_t, conf_t)
-            logging.info("Epoch: f'{epoch} Total loss : f'{loss}")
+            loss = loss_func(transpose_ploc, transpose_plabel, transpose_loc_t, conf_t)
+
+            print("Epoch: " + str(epoch) + " Total loss : " + str(loss.item())
+                  )
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
 
+    ds = SSDDataset(csv_file=test, img_size=img_size)
 
+    dataloader = torch.utils.data.DataLoader(
+        ds,
+        batch_size=1,
+        shuffle=True,
+        num_workers=1,
+        pin_memory=True,
+        collate_fn=ds.collate_fn,
+    )
+    rest = []
+    for batch_i, (imgs, targets) in enumerate(dataloader):
+        imgs = Variable(imgs.to(device))
+        targets = Variable(targets.to(device), requires_grad=False)
+        # locations of targets
+        targets_loc = targets[..., :4]
+        # classes 0 for first
+        targets_c = targets[..., -1]
+        ploc, plabel = model(imgs)
+        for batch_j in range(ploc.size()[0]):
+            supa = []
+            for i, val in enumerate(ploc[batch_j]):
+                if plabel[batch_j, i] > 0:
+                    supa.append(val)
+            rest.append(supa)

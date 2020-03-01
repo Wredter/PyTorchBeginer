@@ -5,12 +5,12 @@ from math import sqrt
 
 
 class DefaultBoxes(object):
-    def __init__(self, fig_size, feat_size, steps, scales, aspect_ratios,
+    def __init__(self, fig_size, feat_size, steps, scales, aspect_ratios, variance,
                  scale_xy=0.1, scale_wh=0.2):
 
         self.feat_size = feat_size
         self.fig_size = fig_size
-
+        self.variance = variance
         self.scale_xy_ = scale_xy
         self.scale_wh_ = scale_wh
 
@@ -66,8 +66,9 @@ def dboxes300():
     figsize = 300
     feat_size = [38, 19, 10, 5, 3, 1]
     steps = [8, 16, 32, 64, 100, 300]
+    variance = [0.1, 0.2]
     # use the scales here: https://github.com/amdegroot/ssd.pytorch/blob/master/data/config.py
     scales = [21, 45, 99, 153, 207, 261, 315]
     aspect_ratios = [[2], [2, 3], [2, 3], [2, 3], [2], [2]]
-    dboxes = DefaultBoxes(figsize, feat_size, steps, scales, aspect_ratios)
+    dboxes = DefaultBoxes(figsize, feat_size, steps, scales, aspect_ratios, variance)
     return dboxes

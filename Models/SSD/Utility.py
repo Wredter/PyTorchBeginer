@@ -7,13 +7,13 @@ from Models.YOLO.utility import bbox_iou
 import torch
 
 
-def compare_prediction_with_bbox(predictions, bboxes, grand_truth_bb, grand_truth_cls, iou_tres):
+def compare_prediction_with_bbox(bboxes, grand_truth_bb, grand_truth_cls, iou_tres, variance):
     conf = torch.zeros((int(grand_truth_bb.size()[0]), int(bboxes.size()[0])))
     matches = torch.zeros((int(grand_truth_bb.size()[0]), int(bboxes.size()[0]), 4))
     for batch in range(grand_truth_bb.size(0)):
         temp_bbox_ious = jaccard(point_form(grand_truth_bb[batch]),
                                  bboxes)
-        temp_bbox_ious = Variable(temp_bbox_ious.to("cuda")) if predictions.is_cuda else Variable(temp_bbox_ious)
+        temp_bbox_ious = Variable(temp_bbox_ious.to("cuda")) if grand_truth_bb.is_cuda else Variable(temp_bbox_ious)
         # (Bipartite Matching)
         # [1,num_objects] best prior for each ground truth
         best_prior_overlap, best_prior_idx = temp_bbox_ious.max(1, keepdim=True)
@@ -27,10 +27,13 @@ def compare_prediction_with_bbox(predictions, bboxes, grand_truth_bb, grand_trut
         for j in range(best_prior_idx.size(0)):
             best_truth_idx[best_prior_idx[j]] = j
         temp_matches = grand_truth_bb[batch][best_truth_idx]  # Shape: [num_priors,4]
-        temp_conf = grand_truth_cls[batch][best_truth_idx] + 1  # Shape: [num_priors]
+        temp_conf = grand_truth_cls[batch][best_truth_idx]  # Shape: [num_priors]
         temp_conf[best_truth_overlap < iou_tres] = 0  # label as background
+#        temp_matches = encode(point_form(temp_matches), center_size(bboxes), variance)
         matches[batch] = temp_matches
+        torch.set_printoptions(profile='full')
         conf[batch] = temp_conf
+        torch.set_printoptions(profile='default')
     return matches, conf
 
 
@@ -96,6 +99,51 @@ def center_size(boxes):
     Return:
         boxes: (tensor) Converted xmin, ymin, xmax, ymax form of boxes.
     """
-    return torch.cat((boxes[:, 2:] + boxes[:, :2])/2,  # cx, cy
-                     boxes[:, 2:] - boxes[:, :2], 1)  # w, h
+    return torch.cat(((boxes[:, 2:] + boxes[:, :2])/2,  # cx, cy
+                     boxes[:, 2:] - boxes[:, :2]), 1) # w, h
 
+
+def encode(matched, priors, variances):
+    """Encode the variances from the priorbox layers into the ground truth boxes
+    we have matched (based on jaccard overlap) with the prior boxes.
+    Args:
+        matched: (tensor) Coords of ground truth for each prior in point-form
+            Shape: [num_priors, 4].
+        priors: (tensor) Prior boxes in center-offset form
+            Shape: [num_priors,4].
+        variances: (list[float]) Variances of priorboxes
+    Return:
+        encoded boxes (tensor), Shape: [num_priors, 4]
+    """
+
+    # dist b/t match center and prior's center
+    g_cxcy = (matched[:, :2] + matched[:, 2:])/2 - priors[:, :2]
+    # encode variance
+    g_cxcy /= (variances[0] * priors[:, 2:])
+    # match wh / prior wh
+    g_wh = (matched[:, 2:] - matched[:, :2]) / priors[:, 2:]
+    g_wh = torch.log(g_wh) / variances[1]
+    # return target for smooth_l1_loss
+    return torch.cat([g_cxcy, g_wh], 1)  # [num_priors,4]
+
+
+# Adapted from https://github.com/Hakuyume/chainer-ssd
+def decode(loc, priors, variances):
+    """Decode locations from predictions using priors to undo
+    the encoding we did for offset regression at train time.
+    Args:
+        loc (tensor): location predictions for loc layers,
+            Shape: [num_priors,4]
+        priors (tensor): Prior boxes in center-offset form.
+            Shape: [num_priors,4].
+        variances: (list[float]) Variances of priorboxes
+    Return:
+        decoded bounding box predictions
+    """
+
+    boxes = torch.cat((
+        priors[:, :2] + loc[:, :2] * variances[0] * priors[:, 2:],
+        priors[:, 2:] * torch.exp(loc[:, 2:] * variances[1])), 1)
+    boxes[:, :2] -= boxes[:, 2:] / 2
+    boxes[:, 2:] += boxes[:, :2]
+    return boxes

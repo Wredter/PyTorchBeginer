@@ -65,12 +65,12 @@ class SSD300(nn.Module):
         for nd, oc in zip(self.num_defaults, self.feature_extractor.out_channels):
             self.loc.append(
                 nn.Sequential(
-                    nn.Conv2d(oc, nd * 4, kernel_size=3, padding=1),
-                    nn.ReLU(inplace=True)))
+                    nn.Conv2d(oc, nd * 4, kernel_size=3, padding=1)))
+                    # nn.ReLU(inplace=True)
             self.conf.append(
                 nn.Sequential(
-                    nn.Conv2d(oc, nd * self.label_num, kernel_size=3, padding=1),
-                    nn.ReLU(inplace=True)))
+                    nn.Conv2d(oc, nd * self.label_num, kernel_size=3, padding=1)))
+                    # nn.ReLU(inplace=True)
 
         self.loc = nn.ModuleList(self.loc)
         self.conf = nn.ModuleList(self.conf)
@@ -145,12 +145,12 @@ class Loss(nn.Module):
         self.scale_xy = 1.0/dboxes.scale_xy
         self.scale_wh = 1.0/dboxes.scale_wh
 
-        self.sl1_loss = nn.SmoothL1Loss(reduce=False)
+        self.sl1_loss = nn.SmoothL1Loss(reduction='none')
         self.dboxes = nn.Parameter(dboxes(order="xywh").transpose(0, 1).unsqueeze(dim=0),
                                    requires_grad=False)
         # Two factor are from following links
         # http://jany.st/post/2017-11-05-single-shot-detector-ssd-from-scratch-in-tensorflow.html
-        self.con_loss = nn.CrossEntropyLoss(reduce=False)
+        self.con_loss = nn.CrossEntropyLoss(reduction='none')
 
     def _loc_vec(self, loc):
         """
@@ -177,7 +177,7 @@ class Loss(nn.Module):
         sl1 = (mask.float()*sl1).sum(dim=1)
 
         # hard negative mining
-        con = self.con_loss(plabel, glabel)
+        con = self.con_loss(plabel, glabel.long())
 
         # postive mask will never selected
         con_neg = con.clone()
