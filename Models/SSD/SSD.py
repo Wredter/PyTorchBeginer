@@ -140,61 +140,65 @@ class Loss(nn.Module):
         2. Localization Loss: Only on positive labels
         Suppose input dboxes has the shape 8732x4
     """
-    def __init__(self, dboxes):
+    def __init__(self, dboxes, num_classes):
         super(Loss, self).__init__()
         self.scale_xy = 1.0/dboxes.scale_xy
         self.scale_wh = 1.0/dboxes.scale_wh
-
+        self.num_classes = num_classes
         self.sl1_loss = nn.SmoothL1Loss(reduction='none')
-        self.dboxes = nn.Parameter(dboxes(order="xywh").transpose(0, 1).unsqueeze(dim=0),
-                                   requires_grad=False)
+        self.dboxes = dboxes
         # Two factor are from following links
         # http://jany.st/post/2017-11-05-single-shot-detector-ssd-from-scratch-in-tensorflow.html
         self.con_loss = nn.CrossEntropyLoss(reduction='none')
 
-    def _loc_vec(self, loc):
-        """
-            Generate Location Vectors
-        """
-        gxy = self.scale_xy*(loc[:, :2, :] - self.dboxes[:, :2, :])/self.dboxes[:, 2:, ]
-        gwh = self.scale_wh*(loc[:, 2:, :]/self.dboxes[:, 2:, :]).log()
-        return torch.cat((gxy, gwh), dim=1).contiguous()
-
     def forward(self, ploc, plabel, gloc, glabel):
-        """
-            ploc, plabel: Nx4x8732, Nxlabel_numx8732
-                predicted location and labels
-            gloc, glabel: Nx4x8732, Nx8732
-                ground truth location and labels
-        """
-        mask = glabel > 0
-        pos_num = mask.sum(dim=1)
+        num = ploc.size(0)
+        pos = plabel > 0
 
-        vec_gd = self._loc_vec(gloc)
+        # location loss
+        pos_idx = pos.expand_as(ploc)
+        loc_p = ploc[pos_idx].view(-1, 4)
+        loc_t = gloc[pos_idx].view(-1, 4)
+        loss_l = self.sl1_loss(loc_p, loc_t)
 
-        # sum on four coordinates, and mask
-        sl1 = self.sl1_loss(ploc, vec_gd).sum(dim=1)
-        sl1 = (mask.float()*sl1).sum(dim=1)
+        batch_conf = plabel.view(-1, self.num_classes)
+        # DEBUG
+        log_sum = log_sum_exp(batch_conf)
+        view = glabel.view(-1, 1)
+        gather = batch_conf.gather(1, view)
+        loss_c = log_sum - gather
 
-        # hard negative mining
-        con = self.con_loss(plabel, glabel.long())
+        # Hard Negative Mining
+        loss_c[pos] = 0  # filter out pos boxes for now
+        loss_c = loss_c.view(num, -1)
+        _, loss_idx = loss_c.sort(1, descending=True)
+        _, idx_rank = loss_idx.sort(1)
+        num_pos = pos.long().sum(1, keepdim=True)
+        num_neg = torch.clamp(self.negpos_ratio * num_pos, max=pos.size(1) - num_pos)
+        neg = idx_rank < num_neg.expand_as(idx_rank)
 
-        # postive mask will never selected
-        con_neg = con.clone()
-        con_neg[mask] = 0
-        _, con_idx = con_neg.sort(dim=1, descending=True)
-        _, con_rank = con_idx.sort(dim=1)
+        # Confidence Loss Including Positive and Negative Examples
+        pos_idx = pos.unsqueeze(2).expand_as(plabel)
+        neg_idx = neg.unsqueeze(2).expand_as(plabel)
+        conf_p = plabel[(pos_idx + neg_idx).gt(0)].view(-1, self.num_classes)
+        targets_weighted = glabel[(pos + neg).gt(0)]
+        loss_c = self.con_loss(conf_p, targets_weighted)
 
-        # number of negative three times positive
-        neg_num = torch.clamp(3*pos_num, max=mask.size(1)).unsqueeze(-1)
-        neg_mask = con_rank < neg_num
+        # Sum of losses: L(x,c,l,g) = (Lconf(x, c) + αLloc(x,l,g)) / N
 
-        #print(con.shape, mask.shape, neg_mask.shape)
-        closs = (con*(mask.float() + neg_mask.float())).sum(dim=1)
+        N = num_pos.data.sum()
+        loss_l /= N
+        loss_c /= N
+        loss = loss_l + loss_c
+        return loss
 
-        # avoid no object detected
-        total_loss = sl1 + closs
-        num_mask = (pos_num > 0).float()
-        pos_num = pos_num.float().clamp(min=1e-6)
-        ret = (total_loss*num_mask/pos_num).mean(dim=0)
-        return ret
+
+def log_sum_exp(x):
+    """Utility function for computing log_sum_exp while determining
+    This will be used to determine unaveraged confidence loss across
+    all examples in a batch.
+    Args:
+        x (Variable(tensor)): conf_preds from conf layers
+    """
+    x_max = x.data.max()
+    return torch.log(torch.sum(torch.exp(x-x_max), 1, keepdim=True)) + x_max
