@@ -165,6 +165,7 @@ class Loss(nn.Module):
         # DEBUG
         log_sum = log_sum_exp(batch_conf)
         view = glabel.view(-1, 1)
+        # Nie działa!!! CZEMU?
         gather = batch_conf.gather(1, view)
         loss_c = log_sum - gather
 
