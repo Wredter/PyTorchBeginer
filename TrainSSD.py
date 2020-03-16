@@ -1,7 +1,7 @@
 from __future__ import division
 
 import os
-
+import matplotlib.pyplot as ptl
 import torch
 import tqdm
 import logging
@@ -25,11 +25,13 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     evaluation_interval = 10
+    num_classes = 2
     epochs = 100
     img_size = 300
     batch_size = 8
+    loslist = []
 
-    model = SSD300().to(device)
+    model = SSD300(num_classes).to(device)
 
     # na przyszłość nie robić tak jak zrobiłem to głupie i działa tylko dla konkretnego przypadku
     ds = SSDDataset(csv_file=train, img_size=img_size)
@@ -48,8 +50,9 @@ if __name__ == "__main__":
     start_epoch = 0
     iteration = 0
     t_bbox = dboxes300()
-    loss_func = Loss(t_bbox, 1).to(device)
+    loss_func = Loss(t_bbox, num_classes).to(device)
     for epoch in range(start_epoch, epochs):
+
         for batch_i, (imgs, targets) in enumerate(dataloader):
             imgs = Variable(imgs.to(device))
             targets = Variable(targets.to(device), requires_grad=False)
@@ -58,7 +61,7 @@ if __name__ == "__main__":
             # classes 0 for first
             targets_c = targets[..., -1]
             ploc, plabel = model(imgs)
-
+            optimizer.zero_grad()
             loc_t, conf_t = compare_prediction_with_bbox(t_bbox(order='ltrb').to(device),
                                                          targets_loc,
                                                          targets_c,
@@ -68,28 +71,13 @@ if __name__ == "__main__":
             conf_t = Variable(conf_t.to(device), requires_grad=False)
 
             loss = loss_func(ploc, plabel, loc_t, conf_t)
-
-            print("Epoch: " + str(epoch) + " Total loss : " + str(loss.item())
-                  )
+            loslist.append(loss.item())
             loss.backward()
             optimizer.step()
+        if epoch % 5 == 0:
+            print("Epoch: " + str(epoch) + " Total loss : " + str(loslist[-1])
+                  )
+    ptl.plot(loslist)
+    ptl.ylabel("loss")
 
-    ds = SSDDataset(csv_file=test, img_size=img_size)
-
-    dataloader = torch.utils.data.DataLoader(
-        ds,
-        batch_size=1,
-        shuffle=True,
-        num_workers=1,
-        pin_memory=True,
-        collate_fn=ds.collate_fn,
-    )
-    for batch_i, (imgs, targets) in enumerate(dataloader):
-        imgs = Variable(imgs.to(device))
-        targets = Variable(targets.to(device), requires_grad=False)
-        # locations of targets
-        targets_loc = targets[..., :4]
-        # classes 0 for first
-        targets_c = targets[..., -1]
-        ploc, plabel = model(imgs)
-        print("Stop")
+    ptl.show()

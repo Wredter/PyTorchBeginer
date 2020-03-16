@@ -53,10 +53,10 @@ class ResNet(nn.Module):
 
 
 class SSD300(nn.Module):
-    def __init__(self, backbone=ResNet('resnet50')):
+    def __init__(self, num_classes, backbone=ResNet('resnet50')):
         super(SSD300, self).__init__()
         self.feature_extractor = backbone
-        self.label_num = 1  # number of COCO classes
+        self.label_num = num_classes # number of COCO classes 1 class + background
         self._build_additional_features(self.feature_extractor.out_channels)
         self.num_defaults = [4, 6, 6, 6, 4, 4]
         self.loc = []
@@ -142,8 +142,6 @@ class Loss(nn.Module):
     """
     def __init__(self, dboxes, num_classes):
         super(Loss, self).__init__()
-        self.scale_xy = 1.0/dboxes.scale_xy
-        self.scale_wh = 1.0/dboxes.scale_wh
         self.num_classes = num_classes
         self.sl1_loss = nn.SmoothL1Loss(reduction='none')
         self.dboxes = dboxes
@@ -153,53 +151,36 @@ class Loss(nn.Module):
 
     def forward(self, ploc, plabel, gloc, glabel):
         num = ploc.size(0)
-        pos = plabel > 0
+        mask = glabel.view(-1) > 0
+        pos_num = mask.sum(dim=0)
 
         # location loss
-        pos_idx = pos.expand_as(ploc)
-        loc_p = ploc[pos_idx].view(-1, 4)
-        loc_t = gloc[pos_idx].view(-1, 4)
-        loss_l = self.sl1_loss(loc_p, loc_t)
+        loc_p = ploc.view(-1, 4)
+        loc_t = gloc.view(-1, 4)
+        loss_l = self.sl1_loss(loc_p, loc_t).sum(1)
+        loss_l = (mask.float()*loss_l).sum()
 
         batch_conf = plabel.view(-1, self.num_classes)
-        # DEBUG
-        log_sum = log_sum_exp(batch_conf)
-        view = glabel.view(-1, 1)
-        # Nie działa!!! CZEMU?
-        gather = batch_conf.gather(1, view)
-        loss_c = log_sum - gather
+        batch_gt = glabel.view(-1)
 
-        # Hard Negative Mining
-        loss_c[pos] = 0  # filter out pos boxes for now
-        loss_c = loss_c.view(num, -1)
-        _, loss_idx = loss_c.sort(1, descending=True)
-        _, idx_rank = loss_idx.sort(1)
-        num_pos = pos.long().sum(1, keepdim=True)
-        num_neg = torch.clamp(self.negpos_ratio * num_pos, max=pos.size(1) - num_pos)
-        neg = idx_rank < num_neg.expand_as(idx_rank)
+        loss_c = self.con_loss(batch_conf, batch_gt)
 
-        # Confidence Loss Including Positive and Negative Examples
-        pos_idx = pos.unsqueeze(2).expand_as(plabel)
-        neg_idx = neg.unsqueeze(2).expand_as(plabel)
-        conf_p = plabel[(pos_idx + neg_idx).gt(0)].view(-1, self.num_classes)
-        targets_weighted = glabel[(pos + neg).gt(0)]
-        loss_c = self.con_loss(conf_p, targets_weighted)
+        # postive mask will never selected
+        con_neg = loss_c.clone()
+        con_neg[mask] = 0
+        _, con_idx = con_neg.sort(dim=0, descending=True)
+        _, con_rank = con_idx.sort(dim=0)
 
-        # Sum of losses: L(x,c,l,g) = (Lconf(x, c) + αLloc(x,l,g)) / N
+        # number of negative three times positive
+        neg_num = torch.clamp(3 * pos_num, max=mask.size(0)).unsqueeze(-1)
+        neg_mask = con_rank < neg_num
 
-        N = num_pos.data.sum()
-        loss_l /= N
-        loss_c /= N
-        loss = loss_l + loss_c
-        return loss
+        # print(con.shape, mask.shape, neg_mask.shape)
+        closs = (loss_c * (mask.float() + neg_mask.float())).sum(dim=0)
 
-
-def log_sum_exp(x):
-    """Utility function for computing log_sum_exp while determining
-    This will be used to determine unaveraged confidence loss across
-    all examples in a batch.
-    Args:
-        x (Variable(tensor)): conf_preds from conf layers
-    """
-    x_max = x.data.max()
-    return torch.log(torch.sum(torch.exp(x-x_max), 1, keepdim=True)) + x_max
+        # avoid no object detected
+        total_loss = loss_l + closs
+        num_mask = (pos_num > 0).float()
+        pos_num = pos_num.float().clamp(min=1e-6)
+        ret = (total_loss * num_mask / pos_num)
+        return ret

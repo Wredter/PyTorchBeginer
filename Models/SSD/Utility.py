@@ -29,7 +29,7 @@ def compare_prediction_with_bbox(bboxes, grand_truth_bb, grand_truth_cls, iou_tr
         temp_matches = grand_truth_bb[batch][best_truth_idx]  # Shape: [num_priors,4]
         temp_conf = grand_truth_cls[batch][best_truth_idx]  # Shape: [num_priors]
         temp_conf[best_truth_overlap < iou_tres] = 0  # label as background
-        temp_matches = encode(temp_matches, bboxes, variance)
+        temp_matches = encode(temp_matches, bboxes)
         matches[batch] = temp_matches
 #        torch.set_printoptions(profile='full')
         conf[batch] = temp_conf
@@ -91,26 +91,25 @@ def point_form(boxes):
                      boxes[:, :2] + boxes[:, 2:]/2), 1)  # xmax, ymax
 
 
-def encode(matched, priors, variances):
+def encode(gt_box, default_box):
     """Encode the variances from the priorbox layers into the ground truth boxes
     we have matched (based on jaccard overlap) with the prior boxes.
     Args:
-        matched: (tensor) Coords of ground truth for each prior in point-form
+        gt_box: (tensor) Coords of ground truth for each prior in point-form
             Shape: [num_priors, 4].
-        priors: (tensor) Prior boxes in center-offset form
+        default_box: (tensor) Prior boxes in center-offset form
             Shape: [num_priors,4].
-        variances: (list[float]) Variances of priorboxes
     Return:
         encoded boxes (tensor), Shape: [num_priors, 4]
     """
 
     # dist b/t match center and prior's center
-    g_cxcy = matched[:, :2] - priors[:, :2]
+    g_cxcy = gt_box[:, :2] - default_box[:, :2]
     # encode variance
-    g_cxcy /= (variances[0] * priors[:, 2:])
+    g_cxcy /= default_box[:, 2:]
     # match wh / prior wh
-    g_wh = matched[:, 2:] / priors[:, 2:]
-    g_wh = torch.log(g_wh) / variances[1]
+    g_wh = gt_box[:, 2:] / default_box[:, 2:]
+    g_wh = torch.log(g_wh)
     # return target for smooth_l1_loss
     return torch.cat([g_cxcy, g_wh], 1)  # [num_priors,4]
 
