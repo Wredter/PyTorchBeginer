@@ -64,13 +64,9 @@ class SSD300(nn.Module):
 
         for nd, oc in zip(self.num_defaults, self.feature_extractor.out_channels):
             self.loc.append(
-                nn.Sequential(
-                    nn.Conv2d(oc, nd * 4, kernel_size=3, padding=1)))
-                    # nn.ReLU(inplace=True)
+                    nn.Conv2d(oc, nd * 4, kernel_size=3, padding=1))
             self.conf.append(
-                nn.Sequential(
-                    nn.Conv2d(oc, nd * self.label_num, kernel_size=3, padding=1)))
-                    # nn.ReLU(inplace=True)
+                    nn.Conv2d(oc, nd * self.label_num, kernel_size=3, padding=1))
 
         self.loc = nn.ModuleList(self.loc)
         self.conf = nn.ModuleList(self.conf)
@@ -101,12 +97,6 @@ class SSD300(nn.Module):
             self.additional_blocks.append(layer)
 
         self.additional_blocks = nn.ModuleList(self.additional_blocks)
-
-    def _init_weights(self):
-        layers = [*self.additional_blocks, *self.loc, *self.conf]
-        for layer in layers:
-            for param in layer.parameters():
-                if param.dim() > 1: nn.init.xavier_uniform_(param)
 
     # Shape the classifier to the view of bboxes
     def bbox_view(self, src, loc, conf):
@@ -180,7 +170,8 @@ class Loss(nn.Module):
 
         # avoid no object detected
         total_loss = loss_l + closs
-        num_mask = (pos_num > 0).float()
-        pos_num = pos_num.float().clamp(min=1e-6)
-        ret = (total_loss * num_mask / pos_num)
-        return ret
+        if pos_num.item() != 0:
+            ret = (total_loss / pos_num)
+            return ret
+        else:
+            return 0
