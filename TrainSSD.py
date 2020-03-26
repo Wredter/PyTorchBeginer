@@ -37,7 +37,7 @@ if __name__ == "__main__":
     model = model.train(False)
 
     # na przyszłość nie robić tak jak zrobiłem to głupie i działa tylko dla konkretnego przypadku
-    dumy_ds = SSDDataset(csv_file=dummy_test, img_size=img_size)
+    dumy_ds = SSDDataset(csv_file=dummy_test, img_size=img_size, amplyfied=True)
     dummy_loader = torch.utils.data.DataLoader(
         dumy_ds,
         batch_size=2,
@@ -47,7 +47,7 @@ if __name__ == "__main__":
         collate_fn=dumy_ds.collate_fn,
     )
 
-    optimizer = torch.optim.SGD(model.parameters(), 0.001)
+    optimizer = torch.optim.Adam(model.parameters(), 0.001)
     model = model.train(True)
     start_epoch = 0
     iteration = 0
@@ -69,6 +69,9 @@ if __name__ == "__main__":
             print(f'Target: {targets_loc[x].tolist()} \n'
                   f'Predicted: {(ploc[x, idx[x]] + db[idx[x]]).tolist()} \n'
                   f'Decoded: {(decode(ploc[x, idx[x]], db[idx[x]])).tolist()}')
+            temp = torch.cat((targets_loc[x], decode(ploc[x, idx[x]], db[idx[x]])), 0)
+            temp = torch.cat((temp, ploc[x, idx[x]] + db[idx[x]]), 0)
+            show_areas(imgs[x], temp, 0)
     # Training
     ds = SSDDataset(csv_file=train, img_size=img_size)
 
@@ -94,7 +97,7 @@ if __name__ == "__main__":
             loc_t, conf_t = compare_prediction_with_bbox(t_bbox(order='ltrb').to(device),
                                                          targets_loc,
                                                          targets_c,
-                                                         0.25,
+                                                         0.5,
                                                          t_bbox.variance)
             loc_t = Variable(loc_t.to(device), requires_grad=False)
             conf_t = Variable(conf_t.to(device), requires_grad=False)
@@ -129,3 +132,7 @@ if __name__ == "__main__":
             print(f'Target: {targets_loc[x].tolist()} \n'
                   f'Predicted: {(ploc[x, idx[x]] + db[idx[x]]).tolist()} \n'
                   f'Decoded: {(decode(ploc[x, idx[x]], db[idx[x]])).tolist()}')
+            temp = torch.cat((targets_loc[x], decode(ploc[x, idx[x]], db[idx[x]])), 0)
+            temp = torch.cat((temp, ploc[x, idx[x]] + db[idx[x]]), 0)
+            show_areas(imgs[x], temp, 0)
+

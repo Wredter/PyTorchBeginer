@@ -102,12 +102,12 @@ def pad_to_square(img, pad_value):
 
 
 class SSDDataset(Dataset):
-    def __init__(self, csv_file, img_size=300, normalized_labels=True, mod=None):
+    def __init__(self, csv_file, img_size=300, normalized_labels=True, amplyfied=False):
         self.img_data = pd.read_csv(csv_file, header=None)
         self.img_size = img_size
         self.normalized_labels = normalized_labels
         self.batch_count = 0
-        self.mod = mod
+        self.amplyfied = amplyfied
 
     def __len__(self):
         return len(self.img_data)
@@ -117,7 +117,12 @@ class SSDDataset(Dataset):
             item = item.tolist()
 
         image = pyd.dcmread(self.img_data.iloc[item][0]).pixel_array
-        image = image[::8, ::8]
+        boxes = self.prep_target(item)
+        if self.amplyfied:
+            image, boxes = self.amplyfy(image, boxes)
+            image = image[::4, ::4]
+        else:
+            image = image[::8, ::8]
         image = image.astype(np.float32)
         image = torch.from_numpy(image)
         if len(image.shape) != 3:
@@ -132,12 +137,6 @@ class SSDDataset(Dataset):
         img, pad = pad_to_square(image, 0)
         temp, padded_h, padded_w = img.shape
         image, _ = pad_to_square(image, 0)
-        boxes = self.img_data.iloc[item][1]
-        boxes = boxes.replace("[", "").replace("]", "").replace("'", "").replace(" ", "")
-        boxes = boxes.split(",")
-        boxes = np.asarray(boxes)
-        boxes = boxes.astype(np.float)
-        boxes = torch.from_numpy(boxes.reshape(-1, 5))
         classes = boxes[:, 0] * 1
         x1 = w_factor * (boxes[:, 1] - boxes[:, 3] / 2)
         y1 = h_factor * (boxes[:, 2] - boxes[:, 4] / 2)
@@ -168,3 +167,97 @@ class SSDDataset(Dataset):
         imgs = torch.stack([resize(img, self.img_size) for img in imgs])
         self.batch_count += 1
         return imgs, targets
+
+    def amplyfy(self, img, boxes):
+        width = img.shape[0]
+        height = img.shape[1]
+        x = boxes[:, 1]
+        y = boxes[:, 2]
+        x_abs = x * width
+        y_abs = y * height
+        w_abs = boxes[:, 3] * width
+        h_abs = boxes[:, 4] * height
+
+        if 0.6 > x > 0.4:
+            cut_x = int(width / 3)
+            cut_y = int(height / 3)
+            if y > 0.6:
+                img = img[cut_x:cut_x * 2:1, cut_y * 2::1]
+                boxes[:, 1] = (x_abs - cut_x) / cut_x
+                boxes[:, 2] = (y_abs - cut_y * 2) / cut_y
+                boxes[:, 3] = (w_abs - cut_x) / cut_x
+                boxes[:, 4] = (h_abs - cut_y * 2) / cut_y
+            elif y < 0.4:
+                img = img[cut_x:cut_x * 2:1, :cut_y:1]
+                boxes[:, 1] = (x_abs - cut_x) / cut_x
+                boxes[:, 2] = (y_abs - 0) / cut_y
+                boxes[:, 3] = (w_abs - cut_x) / cut_x
+                boxes[:, 4] = (h_abs - 0) / cut_y
+            else:
+                img = img[cut_x:cut_x * 2:1, cut_y:cut_y * 2:1]
+                boxes[:, 1] = (x_abs - cut_x) / cut_x
+                boxes[:, 2] = (y_abs - cut_y) / cut_y
+                boxes[:, 3] = (w_abs - cut_x) / cut_x
+                boxes[:, 4] = (h_abs - cut_y) / cut_y
+        elif 0.6 > y > 0.4:
+            cut_x = int(width / 3)
+            cut_y = int(height / 3)
+            if x > 0.6:
+                img = img[cut_x * 2::1, cut_y:cut_y * 2:1]
+                boxes[:, 1] = (x_abs - cut_x * 2) / cut_x
+                boxes[:, 2] = (y_abs - cut_y) / cut_y
+                boxes[:, 3] = (w_abs - cut_x * 2) / cut_x
+                boxes[:, 4] = (h_abs - cut_y) / cut_y
+            elif x < 0.4:
+                img = img[:cut_x:1, cut_y:cut_y * 2:1]
+                boxes[:, 1] = (x_abs - 0) / cut_x
+                boxes[:, 2] = (y_abs - cut_y) / cut_y
+                boxes[:, 3] = (w_abs - 0) / cut_x
+                boxes[:, 4] = (h_abs - cut_y) / cut_y
+            else:
+                img = img[cut_x:cut_x * 2:1, cut_y:cut_y * 2:1]
+                boxes[:, 1] = (x_abs - cut_x) / cut_x
+                boxes[:, 2] = (y_abs - cut_y) / cut_y
+                boxes[:, 3] = (w_abs - cut_x) / cut_x
+                boxes[:, 4] = (h_abs - cut_y) / cut_y
+        elif x > 0.5:
+            cut_x = int(width / 2)
+            cut_y = int(height / 2)
+            if y > 0.5:
+                img = img[cut_x::1, cut_y::1]
+                boxes[:, 1] = (x_abs - cut_x) / cut_x
+                boxes[:, 2] = (y_abs - cut_y) / cut_y
+                boxes[:, 3] = (w_abs - cut_x) / cut_x
+                boxes[:, 4] = (h_abs - cut_y) / cut_y
+            else:
+                img = img[cut_x::1, :cut_y:1]
+                boxes[:, 1] = (x_abs - cut_x) / cut_x
+                boxes[:, 2] = (y_abs - 0) / cut_y
+                boxes[:, 3] = (w_abs - cut_x) / cut_x
+                boxes[:, 4] = (h_abs - 0) / cut_y
+        else:
+            cut_x = int(width / 2)
+            cut_y = int(height / 2)
+            if y > 0.5:
+                img = img[:cut_x:1, cut_y::1]
+                boxes[:, 1] = (x_abs - 0) / cut_x
+                boxes[:, 2] = (y_abs - cut_y) / cut_y
+                boxes[:, 3] = (w_abs - 0) / cut_x
+                boxes[:, 4] = (h_abs - cut_y) / cut_y
+            else:
+                img = img[:cut_x:1, :cut_y:1]
+            boxes[:, 1] = (x_abs - 0) / cut_x
+            boxes[:, 2] = (y_abs - 0) / cut_y
+            boxes[:, 3] = (w_abs - 0) / cut_x
+            boxes[:, 4] = (h_abs - 0) / cut_y
+
+        return img, boxes
+
+    def prep_target(self, item):
+        boxes = self.img_data.iloc[item][1]
+        boxes = boxes.replace("[", "").replace("]", "").replace("'", "").replace(" ", "")
+        boxes = boxes.split(",")
+        boxes = np.asarray(boxes)
+        boxes = boxes.astype(np.float)
+        boxes = torch.from_numpy(boxes.reshape(-1, 5))
+        return boxes

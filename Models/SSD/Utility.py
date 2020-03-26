@@ -1,9 +1,8 @@
 import math
 import numpy as np
-from itertools import product
+import matplotlib.pyplot as ptl
+import matplotlib.patches as patches
 from torch.autograd import Variable
-from Models.YOLO.utility import bbox_iou
-
 import torch
 
 
@@ -123,7 +122,6 @@ def decode(loc, priors):
             Shape: [num_priors,4]
         priors (tensor): Prior boxes in center-offset form.
             Shape: [num_priors,4].
-        variances: (list[float]) Variances of priorboxes
     Return:
         decoded bounding box predictions
     """
@@ -132,3 +130,32 @@ def decode(loc, priors):
         priors[:, :2] + loc[:, :2] * priors[:, 2:],
         priors[:, 2:] * torch.exp(loc[:, 2:])), 1)
     return boxes
+
+
+def show_areas(image, boxes, classes):
+    """Show image with marked areas"""
+    width = image.shape[1]
+    height = image.shape[2]
+    boxes = lbwh_form(boxes)
+
+    fig, ax = ptl.subplots(1)
+    ax.imshow(image.cpu()[0])
+
+    for i in range(boxes.size()[0]):
+        rect = boxes[i] * width
+        rect = patches.Rectangle((rect[0], rect[1]), rect[2], rect[3], linewidth=1, edgecolor='r', facecolor='none')
+        ax.add_patch(rect)
+
+    ptl.show()
+
+
+def lbwh_form(boxes):
+    """ Convert prior_boxes to (xmin, ymin, xmax, ymax)
+    representation for comparison to point form ground truth data.
+    Args:
+        boxes: (tensor) center-size default boxes from priorbox layers.
+    Return:
+        boxes: (tensor) Converted xmin, ymin, xmax, ymax form of boxes.
+    """
+    return torch.cat((boxes[:, :2] - boxes[:, 2:]/2,     # xmin, ymin
+                     boxes[:, 2:]), 1)  # xmax, ymax
