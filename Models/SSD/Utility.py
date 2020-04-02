@@ -145,9 +145,14 @@ def lbwh_form(boxes):
 def final_detection(locations, scores, default_boxes, threshold=0.5, top_detections=200):
     batch_size = locations.shape[0]
     cls_num = scores.shape[2]
+    all_batch_detect = locations.new()
     for x in range(batch_size):
         f_loc = decode(locations[x], default_boxes)
         for cls in range(1, cls_num):
             f_scr = scores[x, :, cls]
-            detect = NMS(f_loc, f_scr)
-    return 0
+            detect = NMS(f_loc, f_scr, threshold, top_detections)
+            detect = torch.cat((detect, cls_num), -1)
+            all_batch_detect = torch.cat((all_batch_detect, detect), 0)
+        if len(all_batch_detect.shape) == 2:
+            all_batch_detect.unsqueeze_(0)
+    return all_batch_detect
