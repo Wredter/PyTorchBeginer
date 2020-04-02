@@ -4,6 +4,7 @@ import cv2
 import pandas as pd
 import pydicom as pyd
 import torch.nn.functional as F
+from Models.SSD.Utility import show_areas
 from skimage import io, transform
 import os
 from Models.Utility.ResourceProvider import *
@@ -102,12 +103,12 @@ def pad_to_square(img, pad_value):
 
 
 class SSDDataset(Dataset):
-    def __init__(self, csv_file, img_size=300, normalized_labels=True, amplyfied=False):
+    def __init__(self, csv_file, img_size=300, normalized_labels=True, mod=None):
         self.img_data = pd.read_csv(csv_file, header=None)
         self.img_size = img_size
         self.normalized_labels = normalized_labels
         self.batch_count = 0
-        self.amplyfied = amplyfied
+        self.mod = mod
 
     def __len__(self):
         return len(self.img_data)
@@ -118,8 +119,11 @@ class SSDDataset(Dataset):
 
         image = pyd.dcmread(self.img_data.iloc[item][0]).pixel_array
         boxes = self.prep_target(item)
-        if self.amplyfied:
+        if self.mod == "amp":
             image, boxes = self.amplyfy(image, boxes)
+            image = image[::4, ::4]
+        if self.mod == "dac":
+            image, boxes = self.divide_and_conquer(image, boxes)
             image = image[::4, ::4]
         else:
             image = image[::8, ::8]
@@ -137,7 +141,7 @@ class SSDDataset(Dataset):
         img, pad = pad_to_square(image, 0)
         temp, padded_h, padded_w = img.shape
         image, _ = pad_to_square(image, 0)
-        classes = boxes[:, 0] * 1
+        classes = boxes[:, 0] * 1 # Do not delete
         x1 = w_factor * (boxes[:, 1] - boxes[:, 3] / 2)
         y1 = h_factor * (boxes[:, 2] - boxes[:, 4] / 2)
         x2 = w_factor * (boxes[:, 1] + boxes[:, 3] / 2)
@@ -169,8 +173,8 @@ class SSDDataset(Dataset):
         return imgs, targets
 
     def amplyfy(self, img, boxes):
-        width = img.shape[0]
-        height = img.shape[1]
+        width = img.shape[1]
+        height = img.shape[0]
         x = boxes[:, 1]
         y = boxes[:, 2]
         x_abs = x * width
@@ -185,20 +189,20 @@ class SSDDataset(Dataset):
                 img = img[cut_x:cut_x * 2:1, cut_y * 2::1]
                 boxes[:, 1] = (x_abs - cut_x) / cut_x
                 boxes[:, 2] = (y_abs - cut_y * 2) / cut_y
-                boxes[:, 3] = (w_abs - cut_x) / cut_x
-                boxes[:, 4] = (h_abs - cut_y * 2) / cut_y
+                boxes[:, 3] = w_abs / cut_x
+                boxes[:, 4] = h_abs / cut_y
             elif y < 0.4:
                 img = img[cut_x:cut_x * 2:1, :cut_y:1]
                 boxes[:, 1] = (x_abs - cut_x) / cut_x
                 boxes[:, 2] = (y_abs - 0) / cut_y
-                boxes[:, 3] = (w_abs - cut_x) / cut_x
-                boxes[:, 4] = (h_abs - 0) / cut_y
+                boxes[:, 3] = w_abs / cut_x
+                boxes[:, 4] = h_abs / cut_y
             else:
                 img = img[cut_x:cut_x * 2:1, cut_y:cut_y * 2:1]
                 boxes[:, 1] = (x_abs - cut_x) / cut_x
                 boxes[:, 2] = (y_abs - cut_y) / cut_y
-                boxes[:, 3] = (w_abs - cut_x) / cut_x
-                boxes[:, 4] = (h_abs - cut_y) / cut_y
+                boxes[:, 3] = w_abs / cut_x
+                boxes[:, 4] = h_abs / cut_y
         elif 0.6 > y > 0.4:
             cut_x = int(width / 3)
             cut_y = int(height / 3)
@@ -206,20 +210,20 @@ class SSDDataset(Dataset):
                 img = img[cut_x * 2::1, cut_y:cut_y * 2:1]
                 boxes[:, 1] = (x_abs - cut_x * 2) / cut_x
                 boxes[:, 2] = (y_abs - cut_y) / cut_y
-                boxes[:, 3] = (w_abs - cut_x * 2) / cut_x
-                boxes[:, 4] = (h_abs - cut_y) / cut_y
+                boxes[:, 3] = w_abs / cut_x
+                boxes[:, 4] = h_abs / cut_y
             elif x < 0.4:
                 img = img[:cut_x:1, cut_y:cut_y * 2:1]
                 boxes[:, 1] = (x_abs - 0) / cut_x
                 boxes[:, 2] = (y_abs - cut_y) / cut_y
-                boxes[:, 3] = (w_abs - 0) / cut_x
-                boxes[:, 4] = (h_abs - cut_y) / cut_y
+                boxes[:, 3] = w_abs / cut_x
+                boxes[:, 4] = h_abs / cut_y
             else:
                 img = img[cut_x:cut_x * 2:1, cut_y:cut_y * 2:1]
                 boxes[:, 1] = (x_abs - cut_x) / cut_x
                 boxes[:, 2] = (y_abs - cut_y) / cut_y
-                boxes[:, 3] = (w_abs - cut_x) / cut_x
-                boxes[:, 4] = (h_abs - cut_y) / cut_y
+                boxes[:, 3] = w_abs / cut_x
+                boxes[:, 4] = h_abs / cut_y
         elif x > 0.5:
             cut_x = int(width / 2)
             cut_y = int(height / 2)
@@ -227,14 +231,14 @@ class SSDDataset(Dataset):
                 img = img[cut_x::1, cut_y::1]
                 boxes[:, 1] = (x_abs - cut_x) / cut_x
                 boxes[:, 2] = (y_abs - cut_y) / cut_y
-                boxes[:, 3] = (w_abs - cut_x) / cut_x
-                boxes[:, 4] = (h_abs - cut_y) / cut_y
+                boxes[:, 3] = w_abs / cut_x
+                boxes[:, 4] = h_abs / cut_y
             else:
                 img = img[cut_x::1, :cut_y:1]
                 boxes[:, 1] = (x_abs - cut_x) / cut_x
                 boxes[:, 2] = (y_abs - 0) / cut_y
-                boxes[:, 3] = (w_abs - cut_x) / cut_x
-                boxes[:, 4] = (h_abs - 0) / cut_y
+                boxes[:, 3] = w_abs / cut_x
+                boxes[:, 4] = h_abs / cut_y
         else:
             cut_x = int(width / 2)
             cut_y = int(height / 2)
@@ -242,15 +246,55 @@ class SSDDataset(Dataset):
                 img = img[:cut_x:1, cut_y::1]
                 boxes[:, 1] = (x_abs - 0) / cut_x
                 boxes[:, 2] = (y_abs - cut_y) / cut_y
-                boxes[:, 3] = (w_abs - 0) / cut_x
-                boxes[:, 4] = (h_abs - cut_y) / cut_y
+                boxes[:, 3] = w_abs / cut_x
+                boxes[:, 4] = h_abs / cut_y
             else:
                 img = img[:cut_x:1, :cut_y:1]
             boxes[:, 1] = (x_abs - 0) / cut_x
             boxes[:, 2] = (y_abs - 0) / cut_y
-            boxes[:, 3] = (w_abs - 0) / cut_x
-            boxes[:, 4] = (h_abs - 0) / cut_y
+            boxes[:, 3] = w_abs / cut_x
+            boxes[:, 4] = h_abs / cut_y
 
+        return img, boxes
+
+    def divide_and_conquer(self, img, boxes):
+        width = img.shape[1]
+        height = img.shape[0]
+        #show_areas(img, boxes[:, 1:], 0)
+        x = boxes[:, 1]
+        y = boxes[:, 2]
+        x_abs = x * width
+        y_abs = y * height
+        w_abs = boxes[:, 3] * width
+        h_abs = boxes[:, 4] * height
+
+        cut_x = int(width / 6)
+        cut_y = int(height / 6)
+        len_x = int(width / 3)
+        len_y = int(height / 3)
+        i_parts = []
+        b_parts = []
+        for xi in range(5):
+            for yi in range(5):
+                part = torch.zeros([boxes.shape[0], boxes.shape[1]])
+                temp_x = cut_x * xi
+                temp_y = cut_y * yi
+                i_parts.append(img[temp_y:temp_y + len_y:1, temp_x:temp_x + len_x:1])
+                part[:, 0] = boxes[:, 0]
+                part[:, 1] = (x_abs - temp_x) / len_x
+                part[:, 2] = (y_abs - temp_y) / len_y
+                part[:, 3] = w_abs / len_x
+                part[:, 4] = h_abs / len_y
+                b_parts.append(part)
+        for i in range(len(b_parts)):
+            gt = b_parts[i]
+            lb = gt[:, 1] - gt[:, 3]/2
+            rb = gt[:, 1] + gt[:, 3]/2
+            ub = gt[:, 2] + gt[:, 4]/2
+            db = gt[:, 2] - gt[:, 4]/2
+            #show_areas(i_parts[i], gt[:, 1:], 0)
+            if lb > 0 and rb < 1 and ub < 1 and db > 0:
+                return i_parts[i], gt
         return img, boxes
 
     def prep_target(self, item):

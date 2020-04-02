@@ -37,7 +37,7 @@ if __name__ == "__main__":
     model = model.train(False)
 
     # na przyszłość nie robić tak jak zrobiłem to głupie i działa tylko dla konkretnego przypadku
-    dumy_ds = SSDDataset(csv_file=dummy_test, img_size=img_size, amplyfied=True)
+    dumy_ds = SSDDataset(csv_file=dummy_test, img_size=img_size, mod="dac")
     dummy_loader = torch.utils.data.DataLoader(
         dumy_ds,
         batch_size=2,
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     )
 
     optimizer = torch.optim.Adam(model.parameters(), 0.001)
-    model = model.train(True)
+
     start_epoch = 0
     iteration = 0
     t_bbox = dboxes300()
@@ -62,19 +62,15 @@ if __name__ == "__main__":
         # classes 0 for first
         targets_c = targets[..., -1]
         ploc, plabel = model(imgs)
-        plabel = plabel[:, :, 1]
         db = t_bbox(order="xywh").to(device)
-        _, idx = plabel.max(1, keepdim=True)
-        for x in range(2):
+        final = final_detection(ploc, plabel, db)
+        for x in range(dummy_loader.batch_size):
             print(f'Target: {targets_loc[x].tolist()} \n'
-                  f'Predicted: {(ploc[x, idx[x]] + db[idx[x]]).tolist()} \n'
-                  f'Decoded: {(decode(ploc[x, idx[x]], db[idx[x]])).tolist()}')
-            temp = torch.cat((targets_loc[x], decode(ploc[x, idx[x]], db[idx[x]])), 0)
-            temp = torch.cat((temp, ploc[x, idx[x]] + db[idx[x]]), 0)
-            show_areas(imgs[x], temp, 0)
+                  f'Decoded: {final[x].tolist()}')
+            show_areas(imgs[x], targets_loc[x], final[x], 0)
     # Training
-    ds = SSDDataset(csv_file=train, img_size=img_size)
-
+    ds = SSDDataset(csv_file=train, img_size=img_size, mod="dac")
+    model = model.train(True)
     dataloader = torch.utils.data.DataLoader(
         ds,
         batch_size=batch_size,
@@ -97,21 +93,29 @@ if __name__ == "__main__":
             loc_t, conf_t = compare_prediction_with_bbox(t_bbox(order='ltrb').to(device),
                                                          targets_loc,
                                                          targets_c,
-                                                         0.5,
+                                                         0.4,
                                                          t_bbox.variance)
             loc_t = Variable(loc_t.to(device), requires_grad=False)
             conf_t = Variable(conf_t.to(device), requires_grad=False)
 
             loss = loss_func(ploc, plabel, loc_t, conf_t)
-            loss.backward()
-            loslist.append(loss.item())
-            if batch_i % 2:
-                optimizer.step()
-                optimizer.zero_grad()
+
+            if loss != 0:
+                loslist.append(loss.item())
+                loss.backward()
+            else:
+                print("Skipped loss")
+            #if batch_i % 2:
+            optimizer.step()
+            optimizer.zero_grad()
 
         if epoch % 5 == 0:
             print("Epoch: " + str(epoch) + " Total loss : " + str(loslist[-1])
                   )
+            for x in range(2):
+                print(f'Target: {targets_loc[x].tolist()} \n'
+                      f'Decoded: {(decode(ploc[x, idx[x]], db[idx[x]])).tolist()}')
+                show_areas(imgs[x], targets_loc[x], decode(ploc[x, idx[x]], db[idx[x]]), 0)
     ptl.plot(loslist)
     ptl.ylabel("loss")
 
@@ -130,9 +134,6 @@ if __name__ == "__main__":
         db = t_bbox(order="xywh").to(device)
         for x in range(2):
             print(f'Target: {targets_loc[x].tolist()} \n'
-                  f'Predicted: {(ploc[x, idx[x]] + db[idx[x]]).tolist()} \n'
                   f'Decoded: {(decode(ploc[x, idx[x]], db[idx[x]])).tolist()}')
-            temp = torch.cat((targets_loc[x], decode(ploc[x, idx[x]], db[idx[x]])), 0)
-            temp = torch.cat((temp, ploc[x, idx[x]] + db[idx[x]]), 0)
-            show_areas(imgs[x], temp, 0)
+            show_areas(imgs[x], targets_loc[x], decode(ploc[x, idx[x]], db[idx[x]]), 0)
 

@@ -2,6 +2,7 @@ import torch
 from Models.YOLO.config.parser import parse_cfg, create_modules
 from Models.YOLO.darknet import *
 import os
+import pydicom as py
 from Models.Utility.ResourceProvider import *
 from Models.Utility.DataLoader import test_dicom_reader
 import matplotlib.pyplot as plt
@@ -10,21 +11,14 @@ import matplotlib.pyplot as plt
 # only_MLO_set.csv
 # only_CC_set.csv
 y = os.getcwd()
-x = y + "\\Data\\only_MLO_set.csv"
-y += "\\Data\\only_CC_set.csv"
-CC = ResourceProvider(y, "D:\\DataSet\\CBIS-DDSM\\", "D:\\DataSet\\ROI\\CBIS-DDSM\\")
-CC.read()
-MLO = ResourceProvider(x, "D:\\DataSet\\CBIS-DDSM\\", "D:\\DataSet\\ROI\\CBIS-DDSM\\")
-MLO.read()
+x = "D:\\DataSet\\CBIS-DDSM\\Mass-Test_P_01787_LEFT_CC\\1.3.6.1.4.1.9590.100.1.2.374375446912980469729505435053598798252\\1.3.6.1.4.1.9590.100.1.2.246616253112617539506581039831772141703\\000000.dcm"
+y = "D:\\DataSet\\ROI\\CBIS-DDSM\\Mass-Test_P_01787_LEFT_CC_1\\1.3.6.1.4.1.9590.100.1.2.137178661810518177826975776450613138254\\1.3.6.1.4.1.9590.100.1.2.131421612911608368538869006151649317483\\000001.dcm"
 
-i_CC, r_CC, i_p_CC, r_p_CC = CC.read_dicom_file(1, True)
-i_MLO, r_MLO, i_p_MLO, r_p_MLO = MLO.read_dicom_file(1, True)
-plt.imshow(i_CC)
+
+ds = py.dcmread(x)
+ds2 = py.dcmread(y)
+
+plt.imshow(ds.pixel_array)
 plt.show()
-plt.imshow(r_CC)
+plt.imshow(ds2.pixel_array)
 plt.show()
-plt.imshow(i_MLO)
-plt.show()
-plt.imshow(r_MLO)
-plt.show()
-print("skończyłem")

@@ -38,7 +38,6 @@ class ResNet(nn.Module):
         if backbone_path:
             backbone.load_state_dict(torch.load(backbone_path))
 
-
         self.feature_extractor = nn.Sequential(*list(backbone.children())[:7])
 
         conv4_block1 = self.feature_extractor[-1][0]

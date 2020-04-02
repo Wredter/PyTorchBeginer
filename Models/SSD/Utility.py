@@ -1,12 +1,15 @@
-import math
 import numpy as np
 import matplotlib.pyplot as ptl
 import matplotlib.patches as patches
 from torch.autograd import Variable
+from Models.Utility.NMS import NMS
 import torch
+
+from Models.Utility.Utility import jaccard, point_form
 
 
 def compare_prediction_with_bbox(bboxes, grand_truth_bb, grand_truth_cls, iou_tres, variance):
+    ###############       TEST         #####################################
     conf = torch.zeros((int(grand_truth_bb.size()[0]), int(bboxes.size()[0])), dtype=torch.int64)
     matches = torch.zeros((int(grand_truth_bb.size()[0]), int(bboxes.size()[0]), 4))
     for batch in range(grand_truth_bb.size(0)):
@@ -30,64 +33,10 @@ def compare_prediction_with_bbox(bboxes, grand_truth_bb, grand_truth_cls, iou_tr
         temp_conf[best_truth_overlap < iou_tres] = 0  # label as background
         temp_matches = encode(temp_matches, bboxes)
         matches[batch] = temp_matches
-#        torch.set_printoptions(profile='full')
+        #torch.set_printoptions(profile='full')
         conf[batch] = temp_conf
-#        torch.set_printoptions(profile='default')
+        #torch.set_printoptions(profile='default')
     return matches, conf
-
-
-def intersect(box_a, box_b):
-    """ We resize both tensors to [A,B,2] without new malloc:
-    [A,2] -> [A,1,2] -> [A,B,2]
-    [B,2] -> [1,B,2] -> [A,B,2]
-    Then we compute the area of intersect between box_a and box_b.
-    Args:
-      box_a: (tensor) bounding boxes, Shape: [A,4].
-      box_b: (tensor) bounding boxes, Shape: [B,4].
-    Return:
-      (tensor) intersection area, Shape: [A,B].
-    """
-    A = box_a.size(0)
-    B = box_b.size(0)
-    max_xy = torch.min(box_a[:, 2:].unsqueeze(1).expand(A, B, 2),
-                       box_b[:, 2:].unsqueeze(0).expand(A, B, 2))
-    min_xy = torch.max(box_a[:, :2].unsqueeze(1).expand(A, B, 2),
-                       box_b[:, :2].unsqueeze(0).expand(A, B, 2))
-    inter = torch.clamp((max_xy - min_xy), min=0)
-    return inter[:, :, 0] * inter[:, :, 1]
-
-
-def jaccard(box_a, box_b):
-    """Compute the jaccard overlap of two sets of boxes.  The jaccard overlap
-    is simply the intersection over union of two boxes.  Here we operate on
-    ground truth boxes and default boxes.
-    E.g.:
-        A ∩ B / A ∪ B = A ∩ B / (area(A) + area(B) - A ∩ B)
-    Args:
-        box_a: (tensor) Ground truth bounding boxes, Shape: [num_objects,4]
-        box_b: (tensor) Prior boxes from priorbox layers, Shape: [num_priors,4]
-    Return:
-        jaccard overlap: (tensor) Shape: [box_a.size(0), box_b.size(0)]
-    """
-    inter = intersect(box_a, box_b)
-    area_a = ((box_a[:, 2]-box_a[:, 0]) *
-              (box_a[:, 3]-box_a[:, 1])).unsqueeze(1).expand_as(inter)  # [A,B]
-    area_b = ((box_b[:, 2]-box_b[:, 0]) *
-              (box_b[:, 3]-box_b[:, 1])).unsqueeze(0).expand_as(inter)  # [A,B]
-    union = area_a + area_b - inter
-    return inter / union  # [A,B]
-
-
-def point_form(boxes):
-    """ Convert prior_boxes to (xmin, ymin, xmax, ymax)
-    representation for comparison to point form ground truth data.
-    Args:
-        boxes: (tensor) center-size default boxes from priorbox layers.
-    Return:
-        boxes: (tensor) Converted xmin, ymin, xmax, ymax form of boxes.
-    """
-    return torch.cat((boxes[:, :2] - boxes[:, 2:]/2,     # xmin, ymin
-                     boxes[:, :2] + boxes[:, 2:]/2), 1)  # xmax, ymax
 
 
 def encode(gt_box, default_box):
@@ -101,14 +50,14 @@ def encode(gt_box, default_box):
     Return:
         encoded boxes (tensor), Shape: [num_priors, 4]
     """
-
+    factors = [0.1, 0.2]
     # dist b/t match center and prior's center
     g_cxcy = gt_box[:, :2] - default_box[:, :2]
     # encode variance
-    g_cxcy /= default_box[:, 2:]
+    g_cxcy /= (factors[0] * default_box[:, 2:])
     # match wh / prior wh
     g_wh = gt_box[:, 2:] / default_box[:, 2:]
-    g_wh = torch.log(g_wh)
+    g_wh = torch.log(g_wh) / factors[1]
     # return target for smooth_l1_loss
     return torch.cat([g_cxcy, g_wh], 1)  # [num_priors,4]
 
@@ -125,27 +74,59 @@ def decode(loc, priors):
     Return:
         decoded bounding box predictions
     """
-
+    factors = [0.2, 0.1]
     boxes = torch.cat((
-        priors[:, :2] + loc[:, :2] * priors[:, 2:],
-        priors[:, 2:] * torch.exp(loc[:, 2:])), 1)
+        priors[:, :2] + loc[:, :2] * factors[0] * priors[:, 2:],
+        priors[:, 2:] * torch.exp(loc[:, 2:] * factors[1])), 1)
     return boxes
 
 
-def show_areas(image, boxes, classes):
+def show_areas(image, targets, predictions, classes):
     """Show image with marked areas"""
-    width = image.shape[1]
-    height = image.shape[2]
-    boxes = lbwh_form(boxes)
+    if len(image.shape) > 2:
+        width = image.shape[1]
+        height = image.shape[2]
+    else:
+        width = image.shape[1]
+        height = image.shape[0]
+    predictions = lbwh_form(predictions)
+    targets = lbwh_form(targets)
 
     fig, ax = ptl.subplots(1)
-    ax.imshow(image.cpu()[0])
+    if type(image) is np.ndarray:
+        ax.imshow(image)
+    else:
+        ax.imshow(image.cpu()[0])
 
-    for i in range(boxes.size()[0]):
-        rect = boxes[i] * width
-        rect = patches.Rectangle((rect[0], rect[1]), rect[2], rect[3], linewidth=1, edgecolor='r', facecolor='none')
+    for i in range(predictions.size()[0]):
+        rect = [0, 0, 0, 0]
+        rect[0] = predictions[i][0] * width
+        rect[1] = predictions[i][1] * height
+        rect[2] = predictions[i][2] * width
+        rect[3] = predictions[i][3] * height
+        rect = patches.Rectangle((rect[0], rect[1]),
+                                 rect[2],
+                                 rect[3],
+                                 linewidth=1,
+                                 edgecolor='orange',
+                                 facecolor='none')
+        rect.set_label("prediction")
         ax.add_patch(rect)
-
+    for i in range(targets.size()[0]):
+        rect = [0, 0, 0, 0]
+        rect[0] = targets[i][0] * width
+        rect[1] = targets[i][1] * height
+        rect[2] = targets[i][2] * width
+        rect[3] = targets[i][3] * height
+        rect = patches.Rectangle((rect[0], rect[1]),
+                                 rect[2],
+                                 rect[3],
+                                 linewidth=1,
+                                 edgecolor='r',
+                                 facecolor='none')
+        rect.set_label("Target")
+        ax.add_patch(rect)
+    ax.legend()
     ptl.show()
 
 
@@ -159,3 +140,14 @@ def lbwh_form(boxes):
     """
     return torch.cat((boxes[:, :2] - boxes[:, 2:]/2,     # xmin, ymin
                      boxes[:, 2:]), 1)  # xmax, ymax
+
+
+def final_detection(locations, scores, default_boxes, threshold=0.5, top_detections=200):
+    batch_size = locations.shape[0]
+    cls_num = scores.shape[2]
+    for x in range(batch_size):
+        f_loc = decode(locations[x], default_boxes)
+        for cls in range(1, cls_num):
+            f_scr = scores[x, :, cls]
+            detect = NMS(f_loc, f_scr)
+    return 0
