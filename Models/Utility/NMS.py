@@ -27,6 +27,7 @@ def NMS(predictions, scores, threshold=0.5, top_detections=200):
         IoU = jaccard(deb1, deb2)
         IoU_mask = IoU.le(threshold).expand_as(pred_score)
         pred_score = pred_score * IoU_mask.float()
+        pred_score = torch.cat((pred_score[:idx[4], :], pred_score[idx[4]+1:, :]), 0)
         pred_score = pred_score[pred_score.abs().sum(dim=1) != 0]
         counter += 1
 

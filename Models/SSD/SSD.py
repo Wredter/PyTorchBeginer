@@ -11,10 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+from torch.autograd import Variable
 import torch
 import torch.nn as nn
 from torchvision.models.resnet import resnet18, resnet34, resnet50, resnet101, resnet152
+from Models.SSD.Utility import compare_prediction_with_bbox
 
 
 class ResNet(nn.Module):
@@ -128,17 +129,26 @@ class Loss(nn.Module):
         2. Localization Loss: Only on positive labels
         Suppose input dboxes has the shape 8732x4
     """
-    def __init__(self, dboxes, num_classes):
+    def __init__(self, dboxes, match_threshold, num_classes):
         super(Loss, self).__init__()
         self.num_classes = num_classes
         self.sl1_loss = nn.SmoothL1Loss(reduction='none')
         self.dboxes = dboxes
-        # Two factor are from following links
-        # http://jany.st/post/2017-11-05-single-shot-detector-ssd-from-scratch-in-tensorflow.html
+        self.match_threshold = match_threshold
         self.con_loss = nn.CrossEntropyLoss(reduction='none')
 
     def forward(self, ploc, plabel, gloc, glabel):
+        gloc, glabel = compare_prediction_with_bbox(self.dboxes(order='ltrb').to(ploc.device),
+                                                     gloc,
+                                                     glabel,
+                                                     0.4)
+        gloc = Variable(gloc.to(ploc.device), requires_grad=False)
+        glabel = Variable(glabel.to(ploc.device), requires_grad=False)
+
+
         num = ploc.size(0)
+        #torch.set_printoptions(profile='full')
+
         mask = glabel.view(-1) > 0
         pos_num = mask.sum(dim=0)
 
@@ -147,7 +157,7 @@ class Loss(nn.Module):
         loc_t = gloc.view(-1, 4)
         loss_l = self.sl1_loss(loc_p, loc_t).sum(1)
         loss_l = (mask.float()*loss_l).sum()
-
+        #torch.set_printoptions(profile='default')
         batch_conf = plabel.view(-1, self.num_classes)
         batch_gt = glabel.view(-1)
 

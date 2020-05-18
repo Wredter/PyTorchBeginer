@@ -8,7 +8,7 @@ import torch
 from Models.Utility.Utility import jaccard, point_form
 
 
-def compare_prediction_with_bbox(bboxes, grand_truth_bb, grand_truth_cls, iou_tres, variance):
+def compare_prediction_with_bbox(bboxes, grand_truth_bb, grand_truth_cls, iou_tres):
     ###############       TEST         #####################################
     conf = torch.zeros((int(grand_truth_bb.size()[0]), int(bboxes.size()[0])), dtype=torch.int64)
     matches = torch.zeros((int(grand_truth_bb.size()[0]), int(bboxes.size()[0]), 4))
@@ -81,7 +81,7 @@ def decode(loc, priors):
     return boxes
 
 
-def show_areas(image, targets, predictions, classes):
+def show_areas(image, targets, predictions, classes, plot_title=None):
     """Show image with marked areas"""
     if len(image.shape) > 2:
         width = image.shape[1]
@@ -126,7 +126,9 @@ def show_areas(image, targets, predictions, classes):
                                  facecolor='none')
         rect.set_label("Target")
         ax.add_patch(rect)
-    ax.legend()
+    #ax.legend()
+    if plot_title:
+        ax.set_title(plot_title)
     ptl.show()
 
 
@@ -142,17 +144,22 @@ def lbwh_form(boxes):
                      boxes[:, 2:]), 1)  # xmax, ymax
 
 
-def final_detection(locations, scores, default_boxes, threshold=0.5, top_detections=200):
+def final_detection(locations, scores, default_boxes, threshold=0.5, top_detections=200, encoding="encoded"):
     batch_size = locations.shape[0]
     cls_num = scores.shape[2]
-    all_batch_detect = locations.new()
+    all_batch_detect = []
     for x in range(batch_size):
-        f_loc = decode(locations[x], default_boxes)
+        if encoding == "encoded":
+            f_loc = decode(locations[x], default_boxes)
+        elif encoding == "delta":
+            f_loc = default_boxes - locations[x]
+        elif encoding == "d_delta":
+            f_loc = default_boxes - decode(locations[x], default_boxes)
+        else:
+            f_loc = locations[x]
         for cls in range(1, cls_num):
             f_scr = scores[x, :, cls]
             detect = NMS(f_loc, f_scr, threshold, top_detections)
-            detect = torch.cat((detect, cls_num), -1)
-            all_batch_detect = torch.cat((all_batch_detect, detect), 0)
-        if len(all_batch_detect.shape) == 2:
-            all_batch_detect.unsqueeze_(0)
+            detect = torch.cat((detect, detect.new_tensor([cls]).expand(detect.shape[0], 1)), -1)
+            all_batch_detect.append(detect)
     return all_batch_detect
