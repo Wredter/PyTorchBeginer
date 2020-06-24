@@ -1,6 +1,8 @@
 import torch
 import tqdm
 import numpy as np
+from Models.Utility.NMS import NMS
+from Models.SSD.Utility import show_areas
 
 
 def to_cpu(tensor):
@@ -71,7 +73,7 @@ def build_targets(pred_boxes, pred_cls, target, anchors, ignore_thres):
     tcls = FloatTensor(nB, nA, nG, nG, nC).fill_(0)
 
     # Convert to position relative to box
-    target_boxes = target[:, 2:6] * nG
+    target_boxes = target[:, 2:6] * nG # ???
     gxy = target_boxes[:, :2]
     gwh = target_boxes[:, 2:]
     # Get anchors with best iou
@@ -104,6 +106,16 @@ def build_targets(pred_boxes, pred_cls, target, anchors, ignore_thres):
 
     tconf = obj_mask.float()
     return iou_scores, class_mask, obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf
+
+
+def nms_prep(img, targets, network_output, conf_threshold=0.5):
+    obj_mask = network_output[:, 4].ge(conf_threshold)
+    obj_mask = obj_mask.unsqueeze(1).expand_as(network_output)
+    network_output = network_output * obj_mask.float()
+    network_output = network_output[network_output.abs().sum(dim=1) != 0]
+    nms_output = NMS(network_output[:, :4], network_output[:, 5])
+    targets_loc = targets[2:].unsqueeze(0)
+    show_areas(img, targets_loc, nms_output[:, :4]/img.shape[1], None, "Detections")
 
 
 def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):

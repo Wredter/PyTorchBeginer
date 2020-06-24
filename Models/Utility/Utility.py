@@ -39,20 +39,31 @@ def intersect(box_a, box_b):
                        box_b[:, 2:].unsqueeze(0).expand(A, B, 2))
     min_xy = torch.max(box_a[:, :2].unsqueeze(1).expand(A, B, 2),
                        box_b[:, :2].unsqueeze(0).expand(A, B, 2))
-    inter = torch.clamp((max_xy - min_xy), min=0)
+    inter = torch.clamp((max_xy - min_xy), min=1e-16)
     return inter[:, :, 0] * inter[:, :, 1]
 
 
 def point_form(boxes):
-    """ Convert prior_boxes to (xmin, ymin, xmax, ymax)
-    representation for comparison to point form ground truth data.
+    """ Convert boxes to (xmin, ymin, xmax, ymax)
     Args:
-        boxes: (tensor) center-size default boxes from priorbox layers.
+        boxes: (tensor) center-size boxes
     Return:
-        boxes: (tensor) Converted xmin, ymin, xmax, ymax form of boxes.
+        boxes: (tensor) Converted xmin, ymin, xmax, ymax boxes.
     """
     return torch.cat((boxes[:, :2] - boxes[:, 2:]/2,     # xmin, ymin
                      boxes[:, :2] + boxes[:, 2:]/2), 1)  # xmax, ymax
+
+
+def box_form(boxes):
+    """ Convert boxes to (x_center, y_center, width, height)
+    Args:
+        boxes: (tensor) Converted xmin, ymin, xmax, ymax boxes.
+    Return:
+        boxes: (tensor) center-size boxes
+    """
+    return torch.cat(((boxes[:, :2] + boxes[:, 2:])/2,     # xmin, ymin
+                     boxes[:, 2:] - boxes[:, :2]), 1)  # xmax, ymax
+
 
 
 def list_avg(my_list):

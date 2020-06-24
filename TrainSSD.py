@@ -22,9 +22,9 @@ if __name__ == "__main__":
     class_names = ["patologia"]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    evaluation_interval = 10
+    encoding = []
     num_classes = 2
-    epochs = 300
+    epochs = 500
     img_size = 300
     batch_size = 8
     loslist = []
@@ -36,14 +36,14 @@ if __name__ == "__main__":
     dumy_ds = SSDDataset(csv_file=dummy_test, img_size=img_size, mod="dac")
     dummy_loader = torch.utils.data.DataLoader(
         dumy_ds,
-        batch_size=2,
+        batch_size=8,
         shuffle=True,
         num_workers=1,
         pin_memory=True,
         collate_fn=dumy_ds.collate_fn,
     )
 
-    optimizer = torch.optim.Adam(model.parameters(), 0.0008)
+    optimizer = torch.optim.Adam(model.parameters(), 0.0005)
 
     start_epoch = 0
     iteration = 0
@@ -58,22 +58,13 @@ if __name__ == "__main__":
         # classes 0 for first
         targets_c = targets[..., -1]
         ploc, plabel = model(imgs)
+        # DO WYWALENIA POTEM
+        # loss = loss_func(ploc, plabel, targets_loc, targets_c)
+
         db = t_bbox(order="xywh").to(device)
-        final = final_detection(ploc, plabel, db)
-        raw = final_detection(ploc, plabel, db, encoding=None)
-        delta = final_detection(ploc, plabel, db, encoding="delta")
-        decoded_delta = final_detection(ploc, plabel, db, encoding="d_delta")
-        for x in range(dummy_loader.batch_size):
-            print(f'Target: {targets[x].tolist()} \n'
-                  f'Decoded: {final[x].tolist()} \n'
-                  f'Raw: {raw[x].tolist()} \n'
-                  f'Delta {delta[x].tolist()} \n'
-                  f'Decoded Delta {decoded_delta[x].tolist()}')
-            show_areas(imgs[x], targets_loc[x], final[x][:, :4], 0, plot_title="Decoded")
-            show_areas(imgs[x], targets_loc[x], raw[x][:, :4], 0, plot_title="Raw")
-            show_areas(imgs[x], targets_loc[x], delta[x][:, :4], 0, plot_title="delta")
-            show_areas(imgs[x], targets_loc[x], decoded_delta[x][:, :4], 0, plot_title="Decoded Delta")
+        generate_plots(ploc, plabel, db, targets, imgs, dummy_loader.batch_size, encoding)# Only encoding is importatnt "raw","delta","d_delta"
     # Training
+    optimizer.zero_grad()
     ds = SSDDataset(csv_file=dummy_test, img_size=img_size, mod="dac")
     model = model.train(True)
     dataloader = torch.utils.data.DataLoader(
@@ -97,11 +88,8 @@ if __name__ == "__main__":
 
             loss = loss_func(ploc, plabel, targets_loc, targets_c)
 
-            if loss != 0:
-                epoch_err.append(loss.item())
-                loss.backward()
-            else:
-                print("Skipped loss")
+            epoch_err.append(loss.item())
+            loss.backward()
             #if batch_i % 2:
             optimizer.step()
             optimizer.zero_grad()
@@ -109,20 +97,6 @@ if __name__ == "__main__":
         if epoch % 5 == 0:
             print("Epoch: " + str(epoch) + " Total loss : " + str(loslist[-1])
                   )
-            final = final_detection(ploc, plabel, db)
-            raw = final_detection(ploc, plabel, db, encoding=None)
-            delta = final_detection(ploc, plabel, db, encoding="delta")
-            decoded_delta = final_detection(ploc, plabel, db, encoding="d_delta")
-#            for x in range(1):
-#                print(f'Target: {targets[x].tolist()} \n'
-#                      f'Decoded: {final[x].tolist()} \n'
-#                      f'Raw: {raw[x].tolist()} \n'
-#                      f'Delta {delta[x].tolist()} \n'
-#                      f'Decoded Delta {decoded_delta[x].tolist()}')
-#                show_areas(imgs[x], targets_loc[x], final[x][:, :4], 0, plot_title="Decoded")
-#                show_areas(imgs[x], targets_loc[x], raw[x][:, :4], 0, plot_title="Raw")
-#                show_areas(imgs[x], targets_loc[x], delta[x][:, :4], 0, plot_title="delta")
-#                show_areas(imgs[x], targets_loc[x], decoded_delta[x][:, :4], 0, plot_title="Decoded Delta")
     ptl.plot(loslist)
     ptl.ylabel("loss")
 
@@ -137,19 +111,6 @@ if __name__ == "__main__":
         targets_c = targets[..., -1]
         ploc, plabel = model(imgs)
         _, idx = plabel.max(1, keepdim=True)
-        final = final_detection(ploc, plabel, db)
-        raw = final_detection(ploc, plabel, db, encoding=None)
-        delta = final_detection(ploc, plabel, db, encoding="delta")
-        decoded_delta = final_detection(ploc, plabel, db, encoding="d_delta")
-        for x in range(dummy_loader.batch_size):
-            print(f'Target: {targets[x].tolist()} \n'
-                  f'Decoded: {final[x].tolist()} \n'
-                  f'Raw: {raw[x].tolist()} \n'
-                  f'Delta {delta[x].tolist()} \n'
-                  f'Decoded Delta {decoded_delta[x].tolist()}')
-            show_areas(imgs[x], targets_loc[x], final[x][:, :4], 0, plot_title="Decoded")
-            show_areas(imgs[x], targets_loc[x], raw[x][:, :4], 0, plot_title="Raw")
-            show_areas(imgs[x], targets_loc[x], delta[x][:, :4], 0, plot_title="delta")
-            show_areas(imgs[x], targets_loc[x], decoded_delta[x][:, :4], 0, plot_title="Decoded Delta")
+        generate_plots(ploc, plabel, db, targets, imgs, dummy_loader.batch_size, encoding)
         print("Skończyłem")
 

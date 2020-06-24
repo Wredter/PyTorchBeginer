@@ -15,29 +15,18 @@ from torch.autograd import Variable
 import torch
 import torch.nn as nn
 from torchvision.models.resnet import resnet18, resnet34, resnet50, resnet101, resnet152
-from Models.SSD.Utility import compare_prediction_with_bbox
+from Models.SSD.Utility import compare_trgets_with_bbox
 
 
 class ResNet(nn.Module):
-    def __init__(self, backbone='resnet50', backbone_path=None):
+    def __init__(self, backbone='resnet50'):
         super(ResNet, self).__init__()
-        if backbone == 'resnet18':
-            backbone = resnet18(pretrained=not backbone_path)
-            self.out_channels = [256, 512, 512, 256, 256, 128]
-        elif backbone == 'resnet34':
-            backbone = resnet34(pretrained=not backbone_path)
-            self.out_channels = [256, 512, 512, 256, 256, 256]
-        elif backbone == 'resnet50':
-            backbone = resnet50(pretrained=not backbone_path)
+        if backbone == 'resnet50':
+            backbone = resnet50()
             self.out_channels = [1024, 512, 512, 256, 256, 256]
         elif backbone == 'resnet101':
-            backbone = resnet101(pretrained=not backbone_path)
+            backbone = resnet101()
             self.out_channels = [1024, 512, 512, 256, 256, 256]
-        else:  # backbone == 'resnet152':
-            backbone = resnet152(pretrained=not backbone_path)
-            self.out_channels = [1024, 512, 512, 256, 256, 256]
-        if backbone_path:
-            backbone.load_state_dict(torch.load(backbone_path))
 
         self.feature_extractor = nn.Sequential(*list(backbone.children())[:7])
 
@@ -56,7 +45,7 @@ class SSD300(nn.Module):
     def __init__(self, num_classes, backbone=ResNet('resnet50')):
         super(SSD300, self).__init__()
         self.feature_extractor = backbone
-        self.label_num = num_classes# 1 class + background
+        self.label_num = num_classes# 1 class without bacground
         self._build_additional_features(self.feature_extractor.out_channels)
         self.num_defaults = [4, 6, 6, 6, 4, 4]
         self.loc = []
@@ -122,6 +111,7 @@ class SSD300(nn.Module):
         return locs, confs
 
 
+# TO DO
 class Loss(nn.Module):
     """
         Implements the loss as the sum of the followings:
@@ -137,45 +127,52 @@ class Loss(nn.Module):
         self.match_threshold = match_threshold
         self.con_loss = nn.CrossEntropyLoss(reduction='none')
 
-    def forward(self, ploc, plabel, gloc, glabel):
-        gloc, glabel = compare_prediction_with_bbox(self.dboxes(order='ltrb').to(ploc.device),
-                                                     gloc,
-                                                     glabel,
-                                                     0.4)
-        gloc = Variable(gloc.to(ploc.device), requires_grad=False)
-        glabel = Variable(glabel.to(ploc.device), requires_grad=False)
+    def forward(self, ploc, plabel, gtloc, gtlabel):
+        m_pos = None
+        m_cls = None
+        for batch_i in range(ploc.shape[0]):
+            mached_loc, mached_label, mask = compare_trgets_with_bbox(self.dboxes(order='ltrb').to(ploc.device),
+                                                    gtloc[batch_i],
+                                                    gtlabel[batch_i],
+                                                    0.5)
+            if batch_i == 0:
+                m_pos = mached_loc
+                m_cls = mached_label
+                m_iou = mask
+            else:
+                m_pos = torch.cat((m_pos, mached_loc), dim=0)
+                m_cls = torch.cat((m_cls, mached_label), dim=0)
+                m_iou = torch.cat((m_iou, mask), dim=0)
 
+        m_pos = Variable(m_pos.to(ploc.device), requires_grad=False)
+        m_cls = Variable(m_cls.to(ploc.device, dtype=torch.long), requires_grad=False)
+        m_iou = Variable(m_iou.to(ploc.device), requires_grad=False)
 
-        num = ploc.size(0)
+        num = m_pos.size(0)
         #torch.set_printoptions(profile='full')
-
-        mask = glabel.view(-1) > 0
-        pos_num = mask.sum(dim=0)
+        pos_num = m_iou.sum(dim=0)
 
         # location loss
         loc_p = ploc.view(-1, 4)
-        loc_t = gloc.view(-1, 4)
-        loss_l = self.sl1_loss(loc_p, loc_t).sum(1)
-        loss_l = (mask.float()*loss_l).sum()
+        loss_l = self.sl1_loss(loc_p, m_pos).sum(1).unsqueeze(1)
+        loss_l = (m_iou.float()*loss_l).sum()
         #torch.set_printoptions(profile='default')
-        batch_conf = plabel.view(-1, self.num_classes)
-        batch_gt = glabel.view(-1)
 
-        loss_c = self.con_loss(batch_conf, batch_gt)
+        batch_conf = plabel.view(-1, self.num_classes)
+
+        loss_c = self.con_loss(batch_conf, m_cls.squeeze()).contiguous()
 
         # postive mask will never selected
         con_neg = loss_c.clone()
-        con_neg[mask] = 0
+        m_neg_iou = ~m_iou
+        con_neg = (m_neg_iou.squeeze().float() * con_neg)
+        neg_num = pos_num * 3
         _, con_idx = con_neg.sort(dim=0, descending=True)
-        _, con_rank = con_idx.sort(dim=0)
-
-        # number of negative three times positive
-        neg_num = torch.clamp(3 * pos_num, max=mask.size(0)).unsqueeze(-1)
-        neg_mask = con_rank < neg_num
+        con_neg = con_neg[con_idx[:neg_num]]
 
         # print(con.shape, mask.shape, neg_mask.shape)
-        closs = (loss_c * (mask.float() + neg_mask.float())).sum(dim=0)
-
+        closs = (loss_c * (m_iou.squeeze().float())).sum()
+        closs = closs + con_neg.sum()
         # avoid no object detected
         total_loss = loss_l + closs
         if pos_num.item() != 0:
