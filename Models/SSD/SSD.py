@@ -19,7 +19,7 @@ from Models.SSD.Utility import compare_trgets_with_bbox
 
 
 class ResNet(nn.Module):
-    def __init__(self, backbone='resnet50'):
+    def __init__(self, backbone='resnet101'):
         super(ResNet, self).__init__()
         if backbone == 'resnet50':
             backbone = resnet50()
@@ -136,13 +136,13 @@ class Loss(nn.Module):
                                                     gtlabel[batch_i],
                                                     0.5)
             if batch_i == 0:
-                m_pos = mached_loc
-                m_cls = mached_label
-                m_iou = mask
+                m_pos = mached_loc.unsqueeze(0)
+                m_cls = mached_label.unsqueeze(0)
+                m_iou = mask.unsqueeze(0)
             else:
-                m_pos = torch.cat((m_pos, mached_loc), dim=0)
-                m_cls = torch.cat((m_cls, mached_label), dim=0)
-                m_iou = torch.cat((m_iou, mask), dim=0)
+                m_pos = torch.cat((m_pos, mached_loc.unsqueeze(0)), dim=0)
+                m_cls = torch.cat((m_cls, mached_label.unsqueeze(0)), dim=0)
+                m_iou = torch.cat((m_iou, mask.unsqueeze(0)), dim=0)
 
         m_pos = Variable(m_pos.to(ploc.device), requires_grad=False)
         m_cls = Variable(m_cls.to(ploc.device, dtype=torch.long), requires_grad=False)
@@ -150,17 +150,19 @@ class Loss(nn.Module):
 
         num = m_pos.size(0)
         #torch.set_printoptions(profile='full')
+        m_iou = m_iou.view(-1, 4)
         pos_num = m_iou.sum(dim=0)
 
         # location loss
         loc_p = ploc.view(-1, 4)
+        m_pos = m_pos.view(-1, 4)
         loss_l = self.sl1_loss(loc_p, m_pos).sum(1).unsqueeze(1)
         loss_l = (m_iou.float()*loss_l).sum()
         #torch.set_printoptions(profile='default')
 
         batch_conf = plabel.view(-1, self.num_classes)
-
-        loss_c = self.con_loss(batch_conf, m_cls.squeeze()).contiguous()
+        m_cls = m_cls.view(-1, self.num_classes)
+        loss_c = self.con_loss(batch_conf, m_cls.squeeze_())
 
         # postive mask will never selected
         con_neg = loss_c.clone()

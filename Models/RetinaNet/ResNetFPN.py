@@ -19,13 +19,13 @@ class Bottleneck(nn.Module):
         self.layer = nn.Sequential(
             nn.Conv2d(in_planes, planes, kernel_size=1, bias=False),
             nn.BatchNorm2d(planes),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False),
             nn.BatchNorm2d(planes),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             nn.Conv2d(planes, self.expansion*planes, kernel_size=1, bias=False),
             nn.BatchNorm2d(self.expansion*planes),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
         )
 
         self.downsample = nn.Sequential()
@@ -33,7 +33,7 @@ class Bottleneck(nn.Module):
             self.downsample = nn.Sequential(
                 nn.Conv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(self.expansion*planes),
-                nn.ReLU(inplace=True),
+                nn.ReLU(inplace=False),
             )
 
     def forward(self, x):
@@ -47,25 +47,29 @@ class FPN(nn.Module):
         super(FPN, self).__init__()
         self.in_planes = 64
 
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-
         # Bottom-up layers
         self.layer1 = self._make_layer(block,  64, num_blocks[0], stride=1)
         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
         self.conv6 = nn.Conv2d(2048, 256, kernel_size=3, stride=2, padding=1)
-        self.conv7 = nn.Conv2d( 256, 256, kernel_size=3, stride=2, padding=1)
+        self.conv7 = nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=1)
 
         # Lateral layers
         self.latlayer1 = nn.Conv2d(2048, 256, kernel_size=1, stride=1, padding=0)
         self.latlayer2 = nn.Conv2d(1024, 256, kernel_size=1, stride=1, padding=0)
-        self.latlayer3 = nn.Conv2d( 512, 256, kernel_size=1, stride=1, padding=0)
+        self.latlayer3 = nn.Conv2d(512, 256, kernel_size=1, stride=1, padding=0)
 
         # Top-down layers
         self.toplayer1 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
         self.toplayer2 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
+
+        self.pre_layer = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=False),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        )
 
     def _make_layer(self, block, planes, num_blocks, stride):
         strides = [stride] + [1]*(num_blocks-1)
@@ -96,8 +100,7 @@ class FPN(nn.Module):
 
     def forward(self, x):
         # Bottom-up
-        c1 = F.relu(self.bn1(self.conv1(x)))
-        c1 = F.max_pool2d(c1, kernel_size=3, stride=2, padding=1)
+        c1 = self.pre_layer(x)
         c2 = self.layer1(c1)
         c3 = self.layer2(c2)
         c4 = self.layer3(c3)

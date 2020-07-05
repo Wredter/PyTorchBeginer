@@ -122,9 +122,12 @@ def lbwh_form(boxes):
                      boxes[:, 2:]), 1)  # xmax, ymax
 
 
-def final_detection(locations, scores, default_boxes, threshold=0.5, top_detections=50, encoding="encoded"):
+def final_detection(locations, scores, default_boxes, class_to_show, threshold=0.5, top_detections=50, encoding="encoded"):
     batch_size = locations.shape[0]
     cls_num = scores.shape[2]
+    if class_to_show > cls_num:
+        print("Grrrrrrr, zła liczba")
+        return
     all_batch_detect = []
     for x in range(batch_size):
         if encoding == "encoded":
@@ -135,22 +138,22 @@ def final_detection(locations, scores, default_boxes, threshold=0.5, top_detecti
             f_loc = default_boxes - decode(locations[x], default_boxes)
         else:
             f_loc = locations[x]
-        f_scr = scores[x, :, 1]
+        f_scr = scores[x, :, class_to_show]
         detect = NMS(f_loc, f_scr, threshold, top_detections)
         detect = torch.cat((detect, detect.new_tensor([1]).expand(detect.shape[0], 1)), -1)
         all_batch_detect.append(detect)
     return all_batch_detect
 
 
-def generate_plots(ploc, plabel, db, targets, imgs, batch_size, encoding):
-    final = final_detection(ploc, plabel, db, top_detections=50)
+def generate_plots(ploc, plabel, db, targets, imgs, batch_size, encoding, class_to_show):
+    final = final_detection(ploc, plabel, db, class_to_show, top_detections=50)
     targets_loc = targets[..., :4]
     if "raw" in encoding:
-        raw = final_detection(ploc, plabel, db, encoding=None)
+        raw = final_detection(ploc, plabel, db, class_to_show, encoding="None")
     if "delta" in encoding:
-        delta = final_detection(ploc, plabel, db, encoding="delta")
+        delta = final_detection(ploc, plabel, db, class_to_show, encoding="delta")
     if "d_delta" in encoding:
-        decoded_delta = final_detection(ploc, plabel, db, encoding="d_delta")
+        decoded_delta = final_detection(ploc, plabel, db, class_to_show, encoding="d_delta")
     for x in range(batch_size):
         print(f'Target: {targets[x].tolist()}')
         print(f'Decoded: {final[x].tolist()}')

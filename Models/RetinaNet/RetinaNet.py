@@ -25,6 +25,7 @@ class RetinaNet(nn.Module):
                                                                       4)  # [N, 9*4,H,W] -> [N,H,W, 9*4] -> [N,H*W*9, 4]
             cls_pred = cls_pred.permute(0, 2, 3, 1).contiguous().view(x.size(0), -1,
                                                                       self.num_classes)  # [N,9*20,H,W] -> [N,H,W,9*20] -> [N,H*W*9,20]
+            cls_pred = cls_pred.sigmoid()
             loc_preds.append(loc_pred)
             cls_preds.append(cls_pred)
         return torch.cat(loc_preds, 1), torch.cat(cls_preds, 1)

@@ -1,4 +1,16 @@
+import os
 import torch
+
+
+def prep_paths():
+    train = os.getcwd()
+    train += "\\Data\\preped_data_mass_train.csv"
+    test = os.getcwd()
+    test += "\\Data\\preped_data_mass_test.csv"
+    dummy_test = os.getcwd()
+    dummy_test += "\\Data\\Dumy_test.csv"
+    class_names = ["patologia"]
+    return train, test, dummy_test, class_names
 
 
 def jaccard(box_a, box_b):
