@@ -23,8 +23,8 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     encoding = []
-    num_classes = 2
-    epochs = 500
+    num_classes = 1
+    epochs = 200
     img_size = 300
     batch_size = 8
     loslist = []
@@ -63,7 +63,7 @@ if __name__ == "__main__":
         # loss = loss_func(ploc, plabel, targets_loc, targets_c)
 
         db = t_bbox(order="xywh").to(device)
-        generate_plots(ploc, plabel, db, targets, imgs, dummy_loader.batch_size, encoding, 1)# Only encoding is importatnt "raw","delta","d_delta"
+        generate_plots(ploc, plabel, db, targets, imgs, dummy_loader.batch_size, encoding, 0)# Only encoding is importatnt "raw","delta","d_delta"
     # Training
     optimizer.zero_grad()
     ds = SSDDataset(csv_file=train, img_size=img_size, mod="dac")
@@ -114,6 +114,6 @@ if __name__ == "__main__":
         targets_c = targets[..., -1]
         ploc, plabel = model(imgs)
         _, idx = plabel.max(1, keepdim=True)
-        generate_plots(ploc, plabel, db, targets, imgs, dummy_loader.batch_size, encoding, 1)
+        generate_plots(ploc, plabel, db, targets, imgs, dummy_loader.batch_size, encoding, 0)
         print("Skończyłem")
 

@@ -15,30 +15,26 @@ class Bottleneck(nn.Module):
 
     def __init__(self, in_planes, planes, stride=1):
         super(Bottleneck, self).__init__()
-
-        self.layer = nn.Sequential(
-            nn.Conv2d(in_planes, planes, kernel_size=1, bias=False),
-            nn.BatchNorm2d(planes),
-            nn.ReLU(inplace=False),
-            nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False),
-            nn.BatchNorm2d(planes),
-            nn.ReLU(inplace=False),
-            nn.Conv2d(planes, self.expansion*planes, kernel_size=1, bias=False),
-            nn.BatchNorm2d(self.expansion*planes),
-            nn.ReLU(inplace=False),
-        )
+        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv3 = nn.Conv2d(planes, self.expansion*planes, kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(self.expansion*planes)
 
         self.downsample = nn.Sequential()
         if stride != 1 or in_planes != self.expansion*planes:
             self.downsample = nn.Sequential(
                 nn.Conv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(self.expansion*planes),
-                nn.ReLU(inplace=False),
+                nn.BatchNorm2d(self.expansion*planes)
             )
 
     def forward(self, x):
-        out = self.layer(x)
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = F.relu(self.bn2(self.conv2(out)))
+        out = self.bn3(self.conv3(out))
         out += self.downsample(x)
+        out = F.relu(out)
         return out
 
 
@@ -80,23 +76,8 @@ class FPN(nn.Module):
         return nn.Sequential(*layers)
 
     def _upsample_add(self, x, y):
-        '''Upsample and add two feature maps.
-        Args:
-          x: (Variable) top feature map to be upsampled.
-          y: (Variable) lateral feature map.
-        Returns:
-          (Variable) added feature map.
-        Note in PyTorch, when input size is odd, the upsampled feature map
-        with `F.upsample(..., scale_factor=2, mode='nearest')`
-        maybe not equal to the lateral feature map size.
-        e.g.
-        original input size: [N,_,15,15] ->
-        conv2d feature map size: [N,_,8,8] ->
-        upsampled feature map size: [N,_,16,16]
-        So we choose bilinear upsample which supports arbitrary output sizes.
-        '''
-        _,_,H,W = y.size()
-        return F.upsample(x, size=(H, W), mode='bilinear', align_corners=True) + y
+        _, _, H, W = y.size()
+        return F.interpolate(x, size=(H, W), mode='bilinear', align_corners=True) + y
 
     def forward(self, x):
         # Bottom-up
@@ -117,5 +98,5 @@ class FPN(nn.Module):
 
 
 def FPN50():
-    return FPN(Bottleneck, [3, 4, 6, 3])
+    return FPN(Bottleneck, [3, 4, 23, 3])
 

@@ -8,9 +8,14 @@ import torch
 
 
 # Not suited for multiclass problems
-def compare_trgets_with_bbox(bboxes, grand_truth_bb, grand_truth_cls, iou_tres):
+def compare_trgets_with_bbox(bboxes, grand_truth_bb, grand_truth_cls, iou_tres, show_maches_=False, img=None):
     IoUs = jaccard(bboxes, point_form(grand_truth_bb))
     IoUs_mask = IoUs.ge(iou_tres)
+    if show_maches_:
+        boxes = box_form(bboxes)
+        boxes = boxes * IoUs_mask.expand_as(boxes).float()
+        boxes = boxes[boxes.abs().sum(dim=1) != 0]
+        show_areas(img, grand_truth_bb, boxes, None, "Maches")
     encoded_boxes = encode(grand_truth_bb, box_form(bboxes))
     mached_cls = grand_truth_cls.expand(encoded_boxes.shape[0], 1) * IoUs_mask.float()
     return encoded_boxes, mached_cls, IoUs_mask
@@ -140,7 +145,6 @@ def final_detection(locations, scores, default_boxes, class_to_show, threshold=0
             f_loc = locations[x]
         f_scr = scores[x, :, class_to_show]
         detect = NMS(f_loc, f_scr, threshold, top_detections)
-        detect = torch.cat((detect, detect.new_tensor([1]).expand(detect.shape[0], 1)), -1)
         all_batch_detect.append(detect)
     return all_batch_detect
 
@@ -168,4 +172,5 @@ def generate_plots(ploc, plabel, db, targets, imgs, batch_size, encoding, class_
             print(f'Decoded Delta {decoded_delta[x].tolist()}')
             show_areas(imgs[x], targets_loc[x], decoded_delta[x][:, :4], 0, plot_title="Decoded Delta")
     return 0
+
 

@@ -125,7 +125,7 @@ class Loss(nn.Module):
         self.sl1_loss = nn.SmoothL1Loss(reduction='none')
         self.dboxes = dboxes
         self.match_threshold = match_threshold
-        self.con_loss = nn.CrossEntropyLoss(reduction='none')
+        self.con_loss = nn.BCEWithLogitsLoss(reduction='none')
 
     def forward(self, ploc, plabel, gtloc, gtlabel):
         m_pos = None
@@ -145,12 +145,12 @@ class Loss(nn.Module):
                 m_iou = torch.cat((m_iou, mask.unsqueeze(0)), dim=0)
 
         m_pos = Variable(m_pos.to(ploc.device), requires_grad=False)
-        m_cls = Variable(m_cls.to(ploc.device, dtype=torch.long), requires_grad=False)
+        m_cls = Variable(m_cls.to(ploc.device, dtype=torch.float), requires_grad=False)
         m_iou = Variable(m_iou.to(ploc.device), requires_grad=False)
 
         num = m_pos.size(0)
         #torch.set_printoptions(profile='full')
-        m_iou = m_iou.view(-1, 4)
+        m_iou = m_iou.view(-1, self.num_classes)
         pos_num = m_iou.sum(dim=0)
 
         # location loss
@@ -162,18 +162,18 @@ class Loss(nn.Module):
 
         batch_conf = plabel.view(-1, self.num_classes)
         m_cls = m_cls.view(-1, self.num_classes)
-        loss_c = self.con_loss(batch_conf, m_cls.squeeze_())
+        loss_c = self.con_loss(batch_conf, m_cls)
 
         # postive mask will never selected
         con_neg = loss_c.clone()
         m_neg_iou = ~m_iou
-        con_neg = (m_neg_iou.squeeze().float() * con_neg)
+        con_neg = (m_neg_iou.float() * con_neg)
         neg_num = pos_num * 3
         _, con_idx = con_neg.sort(dim=0, descending=True)
         con_neg = con_neg[con_idx[:neg_num]]
 
         # print(con.shape, mask.shape, neg_mask.shape)
-        closs = (loss_c * (m_iou.squeeze().float())).sum()
+        closs = (loss_c * (m_iou.float())).sum()
         closs = closs + con_neg.sum()
         # avoid no object detected
         total_loss = loss_l + closs

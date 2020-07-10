@@ -25,17 +25,22 @@ class RetinaNet(nn.Module):
                                                                       4)  # [N, 9*4,H,W] -> [N,H,W, 9*4] -> [N,H*W*9, 4]
             cls_pred = cls_pred.permute(0, 2, 3, 1).contiguous().view(x.size(0), -1,
                                                                       self.num_classes)  # [N,9*20,H,W] -> [N,H,W,9*20] -> [N,H*W*9,20]
-            cls_pred = cls_pred.sigmoid()
             loc_preds.append(loc_pred)
             cls_preds.append(cls_pred)
         return torch.cat(loc_preds, 1), torch.cat(cls_preds, 1)
 
-    def _make_head(self, out_planes):
+    def _make_head(self, out_planes, sigmoid=False):
         layers = []
         for _ in range(4):
             layers.append(nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1))
             layers.append(nn.ReLU(True))
-        layers.append(nn.Conv2d(256, out_planes, kernel_size=3, stride=1, padding=1))
+        if not sigmoid:
+            layers.append(nn.Conv2d(256, out_planes, kernel_size=3, stride=1, padding=1))
+        else:
+            layers.append(nn.Sequential(
+                nn.Conv2d(256, out_planes, kernel_size=3, stride=1, padding=1),
+                nn.Sigmoid()
+            ))
         return nn.Sequential(*layers)
 
     def freeze_bn(self):

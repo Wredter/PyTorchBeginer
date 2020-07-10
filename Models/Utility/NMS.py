@@ -12,8 +12,14 @@ def NMS(predictions, scores, threshold=0.5, top_detections=50):
     :return: Best non-overlaping detections
     """
     keep = predictions.new()
+    scores = scores.sigmoid()
     pred_score = torch.cat((predictions, scores.unsqueeze(-1)), 1)
     counter = 0
+    obj_mask = scores.ge(threshold)
+    pred_score = pred_score * obj_mask.unsqueeze(1).expand_as(pred_score).float()
+    pred_score = pred_score[pred_score.abs().sum(dim=1) != 0]
+    if pred_score.shape[0] < top_detections:
+        top_detections = pred_score.shape[0]
     v, i = pred_score.sort(dim=0, descending=True)
     pred_score = pred_score[i[:top_detections, 4]]
     pred_score = nms_point_form(pred_score)
