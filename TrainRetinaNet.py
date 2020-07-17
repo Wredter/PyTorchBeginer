@@ -6,12 +6,11 @@ from Models.RetinaNet.Utility import nms_prep, retinabox300
 from Models.SSD.Utility import compare_trgets_with_bbox
 from Models.Utility.DataSets import SSDDataset
 from Models.Utility.Utility import prep_paths, list_avg
-from Models.RetinaNet.Loss import RLoss
+from Models.RetinaNet.RLoss import RLoss
 
 
 if __name__ == "__main__":
     train, test, dummy_test, class_names = prep_paths()
-    torch.autograd.set_detect_anomaly(True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     encoding = []
     loslist = []

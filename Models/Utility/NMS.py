@@ -39,7 +39,8 @@ def NMS(predictions, scores, threshold=0.5, top_detections=50):
         pred_score = pred_score[pred_score.abs().sum(dim=1) != 0]
 
         counter += 1
-
+    if keep.shape[0] == 0:
+        return keep
     return nms_box_form(keep)
 
 

@@ -1,7 +1,7 @@
 from torch.autograd import Variable
 import torch
 import torch.nn as nn
-from Models.RetinaNet.ResNetFPN import FPN50
+from Models.RetinaNet.ResNetFPN import FPN100
 
 
 class RetinaNet(nn.Module):
@@ -9,7 +9,7 @@ class RetinaNet(nn.Module):
 
     def __init__(self, num_classes=1):
         super(RetinaNet, self).__init__()
-        self.fpn = FPN50()
+        self.fpn = FPN100()
         self.num_classes = num_classes
         self.loc_head = self._make_head(self.num_anchors * 4)
         self.cls_head = self._make_head(self.num_anchors * self.num_classes)
@@ -29,18 +29,12 @@ class RetinaNet(nn.Module):
             cls_preds.append(cls_pred)
         return torch.cat(loc_preds, 1), torch.cat(cls_preds, 1)
 
-    def _make_head(self, out_planes, sigmoid=False):
+    def _make_head(self, out_planes):
         layers = []
         for _ in range(4):
             layers.append(nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1))
             layers.append(nn.ReLU(True))
-        if not sigmoid:
-            layers.append(nn.Conv2d(256, out_planes, kernel_size=3, stride=1, padding=1))
-        else:
-            layers.append(nn.Sequential(
-                nn.Conv2d(256, out_planes, kernel_size=3, stride=1, padding=1),
-                nn.Sigmoid()
-            ))
+        layers.append(nn.Conv2d(256, out_planes, kernel_size=3, stride=1, padding=1))
         return nn.Sequential(*layers)
 
     def freeze_bn(self):

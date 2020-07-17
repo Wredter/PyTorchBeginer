@@ -28,13 +28,14 @@ class Bottleneck(nn.Module):
                 nn.Conv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(self.expansion*planes)
             )
+        self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = F.relu(self.bn2(self.conv2(out)))
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.relu(self.bn2(self.conv2(out)))
         out = self.bn3(self.conv3(out))
         out += self.downsample(x)
-        out = F.relu(out)
+        out = self.relu(out)
         return out
 
 
@@ -42,6 +43,9 @@ class FPN(nn.Module):
     def __init__(self, block, num_blocks):
         super(FPN, self).__init__()
         self.in_planes = 64
+
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
 
         # Bottom-up layers
         self.layer1 = self._make_layer(block,  64, num_blocks[0], stride=1)
@@ -60,12 +64,6 @@ class FPN(nn.Module):
         self.toplayer1 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
         self.toplayer2 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
 
-        self.pre_layer = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=False),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        )
 
     def _make_layer(self, block, planes, num_blocks, stride):
         strides = [stride] + [1]*(num_blocks-1)
@@ -81,7 +79,8 @@ class FPN(nn.Module):
 
     def forward(self, x):
         # Bottom-up
-        c1 = self.pre_layer(x)
+        c1 = F.relu(self.bn1(self.conv1(x)))
+        c1 = F.max_pool2d(c1, kernel_size=3, stride=2, padding=1)
         c2 = self.layer1(c1)
         c3 = self.layer2(c2)
         c4 = self.layer3(c3)
@@ -97,6 +96,6 @@ class FPN(nn.Module):
         return p3, p4, p5, p6, p7
 
 
-def FPN50():
+def FPN100():
     return FPN(Bottleneck, [3, 4, 23, 3])
 
