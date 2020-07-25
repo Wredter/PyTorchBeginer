@@ -40,6 +40,7 @@ def NMS(predictions, scores, threshold=0.5, top_detections=50):
 
         counter += 1
     if keep.shape[0] == 0:
+        print("NMS unexpeced")
         return keep
     return nms_box_form(keep)
 

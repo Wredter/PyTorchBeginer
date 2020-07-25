@@ -2,10 +2,10 @@ import torch
 import matplotlib.pyplot as ptl
 from torch.autograd import Variable
 from Models.RetinaNet.RetinaNet import RetinaNet
-from Models.RetinaNet.Utility import nms_prep, retinabox300
+from Models.RetinaNet.Utility import nms_prep, retinabox300, retinabox600
 from Models.SSD.Utility import compare_trgets_with_bbox
 from Models.Utility.DataSets import SSDDataset
-from Models.Utility.Utility import prep_paths, list_avg
+from Models.Utility.Utility import prep_paths, list_avg, point_form
 from Models.RetinaNet.RLoss import RLoss
 
 
@@ -16,12 +16,13 @@ if __name__ == "__main__":
     loslist = []
     num_classes = 1
     epochs = 150
-    img_size = 300
-    batch_size = 4
+    img_size = 608
+    batch_size = 2
 
     model = RetinaNet(num_classes).to(device)
     loss_func = RLoss(num_classes)
-    model = model.train(False)
+    model.freeze_bn()
+
 
     # na przyszłość nie robić tak jak zrobiłem to głupie i działa tylko dla konkretnego przypadku
     dumy_ds = SSDDataset(csv_file=dummy_test, img_size=img_size)
@@ -34,12 +35,13 @@ if __name__ == "__main__":
         collate_fn=dumy_ds.collate_fn,
     )
 
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.001)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.95)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+    #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.95)
 
     start_epoch = 0
     iteration = 0
-    t_bbox = retinabox300()
+    t_bbox = retinabox600()
+    db = t_bbox(order="xywh").to(device)
     # Test input
     for batch_i, (imgs, targets) in enumerate(dummy_loader):
         imgs = Variable(imgs.to(device))
@@ -50,13 +52,11 @@ if __name__ == "__main__":
         targets_c = targets[..., -1]
         ploc, plabel = model(imgs)
 
-        db = t_bbox(order="xywh").to(device)
-        for batch_j in range(batch_size):
-            nms_prep(imgs[batch_j], targets[batch_j], ploc[batch_j], plabel[batch_j], db)
+        nms_prep(imgs, targets, ploc, plabel, db)
     # Training
     optimizer.zero_grad()
     ds = SSDDataset(csv_file=train, img_size=img_size)
-    model = model.train(True)
+
     dataloader = torch.utils.data.DataLoader(
         ds,
         batch_size=batch_size,
@@ -69,8 +69,10 @@ if __name__ == "__main__":
     for epoch in range(start_epoch, epochs):
         print(f"--------------------- Epoch {epoch}/{epochs} ---------------------")
         epoch_err = []
+        model = model.train(True)
+        model.freeze_bn()
         for batch_i, (imgs, targets) in enumerate(dataloader):
-            optimizer.zero_grad()
+
             imgs = Variable(imgs.to(device))
             targets = Variable(targets.to(device), requires_grad=False)
             # locations of targets
@@ -79,7 +81,7 @@ if __name__ == "__main__":
             targets_c = targets[..., -1]
             ploc, plabel = model(imgs)
             for batch_j in range(ploc.shape[0]):
-                mached_loc, mached_label, mask = compare_trgets_with_bbox(t_bbox(order="ltrb").to(device),
+                mached_loc, mached_label, mask = compare_trgets_with_bbox(t_bbox(order='ltrb').to(device),
                                                                           targets_loc[batch_j],
                                                                           targets_c[batch_j],
                                                                           0.4)
@@ -87,12 +89,11 @@ if __name__ == "__main__":
                     m_pos = mached_loc.unsqueeze(0)
                     m_cls = mached_label.unsqueeze(0)
                     m_iou = mask.unsqueeze(0)
-                    pos_num1 = m_iou.long().sum().item()
                 else:
                     m_pos = torch.cat((m_pos, mached_loc.unsqueeze(0)), dim=0)
                     m_cls = torch.cat((m_cls, mached_label.unsqueeze(0)), dim=0)
                     m_iou = torch.cat((m_iou, mask.unsqueeze(0)), dim=0)
-                    pos_num1 = m_iou.long().sum().item()
+
 
             m_pos = Variable(m_pos.to(ploc.device), requires_grad=False)
             m_cls = Variable(m_cls.to(ploc.device, dtype=torch.float32), requires_grad=False)
@@ -103,14 +104,13 @@ if __name__ == "__main__":
                 break
             loss = loss_func(ploc, plabel, m_pos, m_cls, m_iou)
             loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
             if batch_i == 1:
-                for batch_j in range(batch_size):
-                    nms_prep(imgs[batch_j], targets[batch_j], ploc[batch_j], plabel[batch_j], db, epoch=epoch)
+                nms_prep(imgs, targets, ploc, plabel, db, epoch=epoch)
             epoch_err.append(loss.item())
             # if batch_i % 2:
-            optimizer.step()
-
-        scheduler.step()
+        #scheduler.step()
 
         loslist.append(list_avg(epoch_err))
         if epoch % 5 == 0:
@@ -120,7 +120,7 @@ if __name__ == "__main__":
     ptl.ylabel("loss")
 
     ptl.show()
-
+    print("--------------------- TEST ---------------------")
     for batch_i, (imgs, targets) in enumerate(dummy_loader):
         imgs = Variable(imgs.to(device))
         targets = Variable(targets.to(device), requires_grad=False)
@@ -130,8 +130,7 @@ if __name__ == "__main__":
         targets_c = targets[..., -1]
         ploc, plabel = model(imgs)
 
-        for batch_j in range(batch_size):
-            nms_prep(imgs[batch_j], targets[batch_j], ploc[batch_j], plabel[batch_j], db)
+        nms_prep(imgs, targets, ploc, plabel, db)
 
     print("Skończyłem")
 

@@ -9,15 +9,18 @@ import torch
 
 
 def nms_prep(img, targets, network_output_loc, network_output_cls, db, conf_threshold=0.5, epoch=-1):
-    network_output_loc = decode(network_output_loc, db)
-    network_output = torch.cat((network_output_loc, network_output_cls), 1)
-    nms_output = NMS(network_output[:, :4], network_output[:, 4])
-    targets_loc = targets[:, :4]
-    if nms_output.shape[0] != 0:
-        if epoch >= 0:
-            show_areas(img, targets_loc, nms_output[:, :4], None, f"Detections epoch: {epoch}")
-        else:
-            show_areas(img, targets_loc, nms_output[:, :4], None, "Detections")
+    for x in range(network_output_loc.shape[0]):
+        network_output_loc_temp = decode(network_output_loc[x], db)
+        network_output_cls_temp = network_output_cls[x]
+        network_output = torch.cat((network_output_loc_temp, network_output_cls_temp), 1).contiguous()
+        nms_output = NMS(network_output[:, :4], network_output[:, 4])
+        targets_loc = targets[x][:, :4]
+        if nms_output.shape[0] != 0:
+            if epoch >= 0:
+                show_areas(img[x], targets_loc, nms_output[:, :4], None, f"Detections epoch: {epoch}")
+                print(nms_output)
+            else:
+                show_areas(img[x], targets_loc, nms_output[:, :4], None, "Detections")
 
 
 class AnchorBoxes(object):
@@ -43,7 +46,7 @@ class AnchorBoxes(object):
         for idx, sfeat in enumerate(self.feat_size):
 
             sk = 1/sfeat
-            sk2 = sk/2
+            sk2 = sk * sqrt(2)
             all_sizes = [(sk, sk), (sk, sk2), (sk2, sk)]
 
             size = len(all_sizes)
@@ -95,8 +98,8 @@ def retinabox300():
 
 
 def retinabox600():
-    figsize = 600
-    feat_size = [38, 19, 10, 5, 3]
+    figsize = 604
+    feat_size = [76, 38, 19, 10, 5]
     steps = [8, 15, 30, 60, 100]
     variance = [0.1, 0.2]
     # use the scales here: https://github.com/amdegroot/ssd.pytorch/blob/master/data/config.py

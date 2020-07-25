@@ -45,7 +45,7 @@ class RLoss(nn.Module):
         log_pt = self.ce_loss(cls_preds, cls_targets)
         pt = torch.exp(-log_pt)
         f_loss = self.alpha * ((1 - pt)**self.gamma) * log_pt
-        f_loss = torch.clamp(f_loss, min=1e-12)
+        f_loss = torch.clamp(f_loss, min=1e-16)
         f_loss = f_loss.sum()
 
 #        f_loss_neg = f_loss.clone()

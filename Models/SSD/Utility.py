@@ -21,7 +21,6 @@ def compare_trgets_with_bbox(bboxes, grand_truth_bb, grand_truth_cls, iou_tres, 
     return encoded_boxes, mached_cls, IoUs_mask
 
 
-
 def encode(gt_box, default_box):
     """Encode the variances from the priorbox layers into the ground truth boxes
     we have matched (based on jaccard overlap) with the prior boxes.
