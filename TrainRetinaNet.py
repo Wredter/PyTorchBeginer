@@ -1,3 +1,5 @@
+import os
+
 import torch
 import matplotlib.pyplot as ptl
 from torch.autograd import Variable
@@ -15,7 +17,7 @@ if __name__ == "__main__":
     encoding = []
     loslist = []
     num_classes = 1
-    epochs = 150
+    epochs = 225
     img_size = 608
     batch_size = 2
 
@@ -131,6 +133,10 @@ if __name__ == "__main__":
         ploc, plabel = model(imgs)
 
         nms_prep(imgs, targets, ploc, plabel, db)
+
+    z = os.getcwd()
+    z += "\\Models\\RetinaNet\\TrainedModel\\RetinaNet.pth"
+    torch.save(model.state_dict(), z)
 
     print("Skończyłem")
 

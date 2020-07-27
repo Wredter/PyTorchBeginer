@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     evaluation_interval = 10
-    epochs = 100
+    epochs = 150
 
     model = Darknet(x).to(device)
     ds = ImgDataset(csv_file=train)
@@ -134,3 +134,5 @@ if __name__ == "__main__":
     z = os.getcwd()
     z += "\\Models\\YOLO\\TrainedModel\\Yolov3.pth"
     torch.save(model.state_dict(), z)
+
+    print("Skończyłem")

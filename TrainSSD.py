@@ -115,5 +115,9 @@ if __name__ == "__main__":
         ploc, plabel = model(imgs)
         _, idx = plabel.max(1, keepdim=True)
         generate_plots(ploc, plabel, db, targets, imgs, dummy_loader.batch_size, encoding, 0)
-        print("Skończyłem")
+
+    z = os.getcwd()
+    z += "\\Models\\SSD\\TrainedModel\\SSD.pth"
+    torch.save(model.state_dict(), z)
+    print("Skończyłem")
 
