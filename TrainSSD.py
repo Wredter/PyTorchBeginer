@@ -33,10 +33,10 @@ if __name__ == "__main__":
     model = model.train(False)
 
     # na przyszłość nie robić tak jak zrobiłem to głupie i działa tylko dla konkretnego przypadku
-    dumy_ds = SSDDataset(csv_file=dummy_test, img_size=img_size, mod="dac")
+    dumy_ds = SSDDataset(csv_file=test, img_size=img_size, mod="dac")
     dummy_loader = torch.utils.data.DataLoader(
         dumy_ds,
-        batch_size=8,
+        batch_size=batch_size,
         shuffle=True,
         num_workers=1,
         pin_memory=True,
@@ -59,11 +59,10 @@ if __name__ == "__main__":
         # classes 0 for first
         targets_c = targets[..., -1]
         ploc, plabel = model(imgs)
-        # DO WYWALENIA POTEM
-        # loss = loss_func(ploc, plabel, targets_loc, targets_c)
 
         db = t_bbox(order="xywh").to(device)
-        generate_plots(ploc, plabel, db, targets, imgs, dummy_loader.batch_size, encoding, 0)# Only encoding is importatnt "raw","delta","d_delta"
+        current_batch_size = ploc.shape[0]
+        generate_plots(ploc, plabel, db, targets, imgs, current_batch_size, encoding, 0)# Only encoding is importatnt "raw","delta","d_delta"
     # Training
     optimizer.zero_grad()
     ds = SSDDataset(csv_file=train, img_size=img_size, mod="dac")
@@ -104,7 +103,9 @@ if __name__ == "__main__":
     ptl.ylabel("loss")
 
 #    ptl.show()
-
+    z = os.getcwd()
+    z += "\\Models\\SSD\\TrainedModel\\SSD2.pth"
+    torch.save(model.state_dict(), z)
     for batch_i, (imgs, targets) in enumerate(dummy_loader):
         imgs = Variable(imgs.to(device))
         targets = Variable(targets.to(device), requires_grad=False)
@@ -114,10 +115,9 @@ if __name__ == "__main__":
         targets_c = targets[..., -1]
         ploc, plabel = model(imgs)
         _, idx = plabel.max(1, keepdim=True)
-        generate_plots(ploc, plabel, db, targets, imgs, dummy_loader.batch_size, encoding, 0)
+        current_batch_size = ploc.shape[0]
+        generate_plots(ploc, plabel, db, targets, imgs, current_batch_size, encoding, 0)
 
-    z = os.getcwd()
-    z += "\\Models\\SSD\\TrainedModel\\SSD.pth"
-    torch.save(model.state_dict(), z)
+
     print("Skończyłem")
 

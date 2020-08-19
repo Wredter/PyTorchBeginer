@@ -1,25 +1,13 @@
-# Copyright (c) 2018-2019, NVIDIA CORPORATION. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+
 from torch.autograd import Variable
 import torch
 import torch.nn as nn
-from torchvision.models.resnet import resnet18, resnet34, resnet50, resnet101, resnet152
+from torchvision.models.resnet import resnet50, resnet101
 from Models.SSD.Utility import compare_trgets_with_bbox
 
 
 class ResNet(nn.Module):
-    def __init__(self, backbone='resnet101'):
+    def __init__(self, backbone='resnet50'):
         super(ResNet, self).__init__()
         if backbone == 'resnet50':
             backbone = resnet50()
@@ -28,7 +16,8 @@ class ResNet(nn.Module):
             backbone = resnet101()
             self.out_channels = [1024, 512, 512, 256, 256, 256]
 
-        self.feature_extractor = nn.Sequential(*list(backbone.children())[:7])
+        self.feature_extractor = \
+            nn.Sequential(*list(backbone.children())[:7])
 
         conv4_block1 = self.feature_extractor[-1][0]
 
@@ -62,28 +51,34 @@ class SSD300(nn.Module):
 
     def _build_additional_features(self, input_size):
         self.additional_blocks = []
-        for i, (input_size, output_size, channels) in enumerate(zip(input_size[:-1], input_size[1:], [256, 256, 128, 128, 128])):
+        for i, (input_size, output_size, channels) in \
+                enumerate(zip(input_size[:-1],
+                              input_size[1:],
+                              [256, 256, 128, 128, 128])):
             if i < 3:
                 layer = nn.Sequential(
-                    nn.Conv2d(input_size, channels, kernel_size=1, bias=False),
+                    nn.Conv2d(input_size, channels,
+                              kernel_size=1, bias=False),
                     nn.BatchNorm2d(channels),
                     nn.ReLU(inplace=True),
-                    nn.Conv2d(channels, output_size, kernel_size=3, padding=1, stride=2, bias=False),
+                    nn.Conv2d(channels, output_size,
+                              kernel_size=3, padding=1,
+                              stride=2, bias=False),
                     nn.BatchNorm2d(output_size),
                     nn.ReLU(inplace=True),
                 )
             else:
                 layer = nn.Sequential(
-                    nn.Conv2d(input_size, channels, kernel_size=1, bias=False),
+                    nn.Conv2d(input_size, channels,
+                              kernel_size=1, bias=False),
                     nn.BatchNorm2d(channels),
                     nn.ReLU(inplace=True),
-                    nn.Conv2d(channels, output_size, kernel_size=3, bias=False),
+                    nn.Conv2d(channels, output_size,
+                              kernel_size=3, bias=False),
                     nn.BatchNorm2d(output_size),
                     nn.ReLU(inplace=True),
                 )
-
             self.additional_blocks.append(layer)
-
         self.additional_blocks = nn.ModuleList(self.additional_blocks)
 
     # Shape the classifier to the view of bboxes
@@ -106,8 +101,6 @@ class SSD300(nn.Module):
 
         # Feature Map 38x38x4, 19x19x6, 10x10x6, 5x5x6, 3x3x4, 1x1x4
         locs, confs = self.bbox_view(detection_feed, self.loc, self.conf)
-
-        # For SSD 300, shall return nbatch x 8732 x {nlabels, nlocs} results
         return locs, confs
 
 

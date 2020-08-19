@@ -1,48 +1,35 @@
 from __future__ import division
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.autograd import Variable
-import numpy as np
-
 from Models.YOLO.config.Layers import *
 
 
 def parse_cfg(cfgfile):
     file = open(cfgfile, 'r')
     lines = file.read().split('\n')
-    lines = [x for x in lines if len(x) > 0]  # get read of the empty lines
-    lines = [x for x in lines if x[0] != '#']  # get rid of comments
+    lines = [x for x in lines if len(x) > 0]
+    lines = [x for x in lines if x[0] != '#']
     lines = [x.rstrip().lstrip() for x in lines]
-
     block = {}
     blocks = []
-
     for line in lines:
-        if line[0] == "[":  # This marks the start of a new block
-            if len(block) != 0:  # If block is not empty, implies it is storing values of previous block.
-                blocks.append(block)  # add it the blocks list
-                block = {}  # re-init the block
+        if line[0] == "[":
+            if len(block) != 0:
+                blocks.append(block)
+                block = {}
             block["type"] = line[1:-1].rstrip()
         else:
             key, value = line.split("=")
             block[key.rstrip()] = value.lstrip()
     blocks.append(block)
-
     return blocks
 
 
 def create_modules(module_defs):
-    """
-    Constructs module list of layer blocks from module configuration in module_defs
-    """
     hyperparams = module_defs.pop(0)
     output_filters = [int(hyperparams["channels"])]
     module_list = nn.ModuleList()
     for module_i, module_def in enumerate(module_defs):
         modules = nn.Sequential()
-
         if module_def["type"] == "convolutional":
             try:
                 bn = int(module_def["batch_normalize"])
@@ -91,16 +78,13 @@ def create_modules(module_defs):
 
         elif module_def["type"] == "yolo":
             anchor_idxs = [int(x) for x in module_def["mask"].split(",")]
-            # Extract anchors
             anchors = [int(x) for x in module_def["anchors"].split(",")]
             anchors = [(anchors[i], anchors[i + 1]) for i in range(0, len(anchors), 2)]
             anchors = [anchors[i] for i in anchor_idxs]
             num_classes = int(module_def["classes"])
             img_size = int(hyperparams["height"])
-            # Define detection layer
             yolo_layer = YOLOLayer(anchors, num_classes, img_size)
             modules.add_module(f"yolo_{module_i}", yolo_layer)
-        # Register module list and number of output filters
         module_list.append(modules)
         output_filters.append(filters)
 

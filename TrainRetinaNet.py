@@ -12,7 +12,7 @@ from Models.RetinaNet.RLoss import RLoss
 
 
 if __name__ == "__main__":
-    train, test, dummy_test, class_names = prep_paths()
+    train, test, dummy_test, class_names, yolo_cfg = prep_paths()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     encoding = []
     loslist = []

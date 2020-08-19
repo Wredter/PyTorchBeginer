@@ -2,14 +2,13 @@ from __future__ import division
 
 import os
 
-import torch
-import tqdm
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 
 from Models.Utility.DataSets import *
-from Models.YOLO.config.parser import *
+from Models.Utility.Utility import prep_paths
 from Models.YOLO.darknet import *
+from Models.Utility.Metricks import Metrics
 
 
 def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size):
@@ -49,50 +48,36 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
 
 
 if __name__ == "__main__":
-    """
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_size", type=int, default=8, help="size of each image batch")
-    parser.add_argument("--model_def", type=str, default="config/yolov3.cfg", help="path to model definition file")
-    parser.add_argument("--data_config", type=str, default="config/coco.data", help="path to data config file")
-    parser.add_argument("--weights_path", type=str, default="weights/yolov3.weights", help="path to weights file")
-    parser.add_argument("--class_path", type=str, default="data/coco.names", help="path to class label file")
-    parser.add_argument("--iou_thres", type=float, default=0.5, help="iou threshold required to qualify as detected")
-    parser.add_argument("--conf_thres", type=float, default=0.001, help="object confidence threshold")
-    parser.add_argument("--nms_thres", type=float, default=0.5, help="iou thresshold for non-maximum suppression")
-    parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
-    parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
-    opt = parser.parse_args()
-    print(opt)
-    """
+    train, test, dummy_test, class_names, yolo_cfg = prep_paths()
+    trained_model = os.getcwd()
+    trained_model += "\\Models\\YOLO\\TrainedModel\\Yolov3.pth"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    num_classes = 1
+    batch_size = 8
+    quality = Metrics()
+    with torch.no_grad():
+        model = Darknet(yolo_cfg)
+        model.load_state_dict(torch.load(trained_model))
+        model.to(device)
+        model.eval()
+        test_ds = ImgDataset(csv_file=test)
+        dataloader = torch.utils.data.DataLoader(
+            test_ds,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=1,
+            pin_memory=True,
+            collate_fn=test_ds.collate_fn,
+        )
 
-    train = os.getcwd()
-    train += "\\Data\\preped_data_mass_train.csv"
-    test = os.getcwd()
-    test += "\\Data\\preped_data_mass_test.csv"
-    class_names = ["patologia"]
-    x = os.getcwd()
-    x += "/Models/YOLO/config/yolov3.cfg"
-    weights_path = ""
+        for batch_i, (imgs, targets) in enumerate(dataloader):
+            imgs = Variable(imgs.to(device))
+            targets = Variable(targets.to(device), requires_grad=False)
+            targets[:, 1] = targets[:, 1] - 1
 
-    # Initiate model
-    model = Darknet(x).to(device)
-    model.load_state_dict(torch.load(weights_path))
+            loss, outputs = model(imgs, targets)
+            for batch_j in range(outputs.shape[0]):
+                output_loc, output_cls, target_loc, num = nms_prep(imgs[batch_j], targets[batch_j], outputs[batch_j])
+                quality.mAP(output_loc, output_cls, target_loc, num)
+    print("finish")
 
-    print("Compute mAP...")
-
-    precision, recall, AP, f1, ap_class = evaluate(
-        model,
-        path=test,
-        iou_thres=0.5,
-        conf_thres=0.001,
-        nms_thres=0.5,
-        img_size=416,
-        batch_size=8,
-    )
-
-    print("Average Precisions:")
-    for i, c in enumerate(ap_class):
-        print(f"+ Class '{c}' ({class_names[c]}) - AP: {AP[i]}")
-
-    print(f"mAP: {AP.mean()}")

@@ -115,7 +115,10 @@ def nms_prep(img, targets, network_output, conf_threshold=0.5):
     network_output = network_output[network_output.abs().sum(dim=1) != 0]
     nms_output = NMS(network_output[:, :4], network_output[:, 5])
     targets_loc = targets[2:].unsqueeze(0)
+    if nms_output.shape[0] == 0:
+        return None, None, targets_loc, 0
     show_areas(img, targets_loc, nms_output[:, :4]/img.shape[1], None, "Detections")
+    return nms_output[:, :4]/img.shape[1], nms_output[:, 4], targets_loc, nms_output.shape[0]
 
 
 def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):

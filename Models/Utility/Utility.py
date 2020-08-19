@@ -9,8 +9,10 @@ def prep_paths():
     test += "\\Data\\preped_data_mass_test.csv"
     dummy_test = os.getcwd()
     dummy_test += "\\Data\\Dumy_test.csv"
+    x = os.getcwd()
+    x += "/Models/YOLO/config/yolov3.cfg"
     class_names = ["patologia"]
-    return train, test, dummy_test, class_names
+    return train, test, dummy_test, class_names, x
 
 
 def jaccard(box_a, box_b):

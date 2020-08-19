@@ -1,18 +1,11 @@
 from __future__ import print_function, division
 
-import cv2
 import pandas as pd
 import pydicom as pyd
 import torch.nn.functional as F
-from Models.SSD.Utility import show_areas
-from skimage import io, transform
-import os
-from Models.Utility.ResourceProvider import *
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, utils
 
 
 class ImgDataset(Dataset):
@@ -41,13 +34,15 @@ class ImgDataset(Dataset):
             image = image.expand((3, h, w))
 
         temp, h, w = image.shape
-        h_factor, w_factor = (h, w) if self.normalized_labels else (1, 1)
+        h_factor, w_factor = (h, w) if \
+            self.normalized_labels else (1, 1)
         # Pad to square resolution
         img, pad = pad_to_square(image, 0)
         temp, padded_h, padded_w = img.shape
         image, _ = pad_to_square(image, 0)
         boxes = self.img_data.iloc[item][1]
-        boxes = boxes.replace("[", "").replace("]", "").replace("'", "").replace(" ","")
+        boxes = boxes.replace("[", "").replace("]", "").\
+            replace("'", "").replace(" ","")
         boxes = boxes.split(",")
         boxes = np.asarray(boxes)
         boxes = boxes.astype(np.float)

@@ -160,6 +160,8 @@ def generate_plots(ploc, plabel, db, targets, imgs, batch_size, encoding, class_
     for x in range(batch_size):
         print(f'Target: {targets[x].tolist()}')
         print(f'Decoded: {final[x].tolist()}')
+        if final[x].sum() == 0:
+            continue
         show_areas(imgs[x], targets_loc[x], final[x][:, :4], 0, plot_title="Decoded")
         if "raw" in encoding:
             print(f'Raw: {raw[x].tolist()}')

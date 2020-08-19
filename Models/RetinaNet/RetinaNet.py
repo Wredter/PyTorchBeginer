@@ -13,21 +13,23 @@ class RetinaNet(nn.Module):
         super(RetinaNet, self).__init__()
         self.num_classes = num_classes
         self.backbone = resnet50_FPN(self.num_classes)
-        self.loc_head = self._make_head(self.num_anchors * 4, cls=False)
-        self.cls_head = self._make_head(self.num_anchors * self.num_classes, cls=True)
+        self.loc_head = self._make_head(self.num_anchors * 4,
+                                        cls=False)
+        self.cls_head = self._make_head(self.num_anchors * self.num_classes,
+                                        cls=True)
         self.freeze_bn()
 
     def forward(self, x):
-        fms = self.backbone(x)
+        features = self.backbone(x)
         loc_preds = []
         cls_preds = []
-        for fm in fms:
-            loc_pred = self.loc_head(fm)
-            cls_pred = self.cls_head(fm)
-            loc_pred = loc_pred.permute(0, 2, 3, 1).contiguous().view(x.size(0), -1,
-                                                                      4)  # [N, 9*4,H,W] -> [N,H,W, 9*4] -> [N,H*W*9, 4]
-            cls_pred = cls_pred.permute(0, 2, 3, 1).contiguous().view(x.size(0), -1,
-                                                                      self.num_classes)  # [N,9*20,H,W] -> [N,H,W,9*20] -> [N,H*W*9,20]
+        for f in features:
+            loc_pred = self.loc_head(f)
+            cls_pred = self.cls_head(f)
+            loc_pred = loc_pred.permute(0, 2, 3, 1).\
+                contiguous().view(x.size(0), -1, 4)
+            cls_pred = cls_pred.permute(0, 2, 3, 1).\
+                contiguous().view(x.size(0), -1, self.num_classes)
             loc_preds.append(loc_pred)
             cls_preds.append(cls_pred)
         return torch.cat(loc_preds, 1), torch.cat(cls_preds, 1)
