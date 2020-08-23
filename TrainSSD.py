@@ -24,7 +24,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     encoding = []
     num_classes = 1
-    epochs = 200
+    epochs = 100
     img_size = 300
     batch_size = 8
     loslist = []
@@ -33,7 +33,7 @@ if __name__ == "__main__":
     model = model.train(False)
 
     # na przyszłość nie robić tak jak zrobiłem to głupie i działa tylko dla konkretnego przypadku
-    dumy_ds = SSDDataset(csv_file=test, img_size=img_size, mod="dac")
+    dumy_ds = SSDDataset(csv_file=test, img_size=img_size)
     dummy_loader = torch.utils.data.DataLoader(
         dumy_ds,
         batch_size=batch_size,
@@ -44,7 +44,7 @@ if __name__ == "__main__":
     )
 
     optimizer = torch.optim.Adam(model.parameters(), 0.001)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.95)
+    #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.95)
 
     start_epoch = 0
     iteration = 0
@@ -65,7 +65,7 @@ if __name__ == "__main__":
         generate_plots(ploc, plabel, db, targets, imgs, current_batch_size, encoding, 0)# Only encoding is importatnt "raw","delta","d_delta"
     # Training
     optimizer.zero_grad()
-    ds = SSDDataset(csv_file=train, img_size=img_size, mod="dac")
+    ds = SSDDataset(csv_file=train, img_size=img_size)
     model = model.train(True)
     dataloader = torch.utils.data.DataLoader(
         ds,
@@ -87,13 +87,16 @@ if __name__ == "__main__":
             ploc, plabel = model(imgs)
 
             loss = loss_func(ploc, plabel, targets_loc, targets_c)
-
-            epoch_err.append(loss.item())
-            loss.backward()
+            if loss == 0:
+                epoch_err.append(loss)
+                continue
+            else:
+                epoch_err.append(loss.item())
+                loss.backward()
             #if batch_i % 2:
             optimizer.step()
             optimizer.zero_grad()
-        scheduler.step()
+        #scheduler.step()
 
         loslist.append(list_avg(epoch_err))
         if epoch % 5 == 0:
@@ -104,8 +107,9 @@ if __name__ == "__main__":
 
 #    ptl.show()
     z = os.getcwd()
-    z += "\\Models\\SSD\\TrainedModel\\SSD2.pth"
+    z += "\\Models\\SSD\\TrainedModel\\SSD_50_e100_t.pth"
     torch.save(model.state_dict(), z)
+    """
     for batch_i, (imgs, targets) in enumerate(dummy_loader):
         imgs = Variable(imgs.to(device))
         targets = Variable(targets.to(device), requires_grad=False)
@@ -117,6 +121,7 @@ if __name__ == "__main__":
         _, idx = plabel.max(1, keepdim=True)
         current_batch_size = ploc.shape[0]
         generate_plots(ploc, plabel, db, targets, imgs, current_batch_size, encoding, 0)
+    """
 
 
     print("Skończyłem")

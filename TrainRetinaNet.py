@@ -17,7 +17,7 @@ if __name__ == "__main__":
     encoding = []
     loslist = []
     num_classes = 1
-    epochs = 225
+    epochs = 400
     img_size = 608
     batch_size = 2
 
@@ -122,6 +122,7 @@ if __name__ == "__main__":
     ptl.ylabel("loss")
 
     ptl.show()
+    """
     print("--------------------- TEST ---------------------")
     for batch_i, (imgs, targets) in enumerate(dummy_loader):
         imgs = Variable(imgs.to(device))
@@ -133,9 +134,9 @@ if __name__ == "__main__":
         ploc, plabel = model(imgs)
 
         nms_prep(imgs, targets, ploc, plabel, db)
-
+    """
     z = os.getcwd()
-    z += "\\Models\\RetinaNet\\TrainedModel\\RetinaNet.pth"
+    z += "\\Models\\RetinaNet\\TrainedModel\\RetinaNet_400_lr10000.pth"
     torch.save(model.state_dict(), z)
 
     print("Skończyłem")
