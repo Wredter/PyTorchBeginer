@@ -24,7 +24,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     encoding = []
     num_classes = 1
-    epochs = 100
+    epochs = 200
     img_size = 300
     batch_size = 8
     loslist = []
@@ -105,7 +105,7 @@ if __name__ == "__main__":
     ptl.plot(loslist)
     ptl.ylabel("loss")
 
-#    ptl.show()
+    ptl.show()
     z = os.getcwd()
     z += "\\Models\\SSD\\TrainedModel\\SSD_50_e100_t.pth"
     torch.save(model.state_dict(), z)

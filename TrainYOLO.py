@@ -6,9 +6,10 @@ from torch.utils.data import DataLoader
 
 from Models.Utility.DataSets import ImgDataset
 from Models.Utility.ResourceProvider import *
+from Models.Utility.Utility import list_avg
 from Models.YOLO.darknet import Darknet
 from Models.YOLO.utility import *
-from TestYOLO import evaluate
+import matplotlib.pyplot as ptl
 
 if __name__ == "__main__":
     train = os.getcwd()
@@ -24,8 +25,8 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     evaluation_interval = 10
-    epochs = 300
-
+    epochs = 150
+    loslist = []
     model = Darknet(x).to(device)
     ds = ImgDataset(csv_file=train)
     img_size = 416
@@ -80,6 +81,7 @@ if __name__ == "__main__":
 
     for epoch in range(epochs):
         model.train()
+        epoch_err = []
         for batch_i, (imgs, targets) in enumerate(dataloader):
             batches_done = len(dataloader) * epoch + batch_i
 
@@ -89,6 +91,7 @@ if __name__ == "__main__":
 
             loss, outputs = model(imgs, targets)
             loss.backward()
+            epoch_err.append(loss.item())
             if epoch == 99:
                 for batch_j in range(2):
                     nms_prep(imgs[batch_j], targets[batch_j], outputs[batch_j])
@@ -127,10 +130,12 @@ if __name__ == "__main__":
             print(log_str)
 
             model.seen += imgs.size(0)
+        loslist.append(list_avg(epoch_err))
 
+    ptl.plot(loslist)
+    ptl.ylabel("loss")
 
-
-
+    ptl.show()
     z = os.getcwd()
     z += "\\Models\\YOLO\\TrainedModel\\Yolov3_300e.pth"
     torch.save(model.state_dict(), z)

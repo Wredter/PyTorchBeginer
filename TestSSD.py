@@ -13,7 +13,7 @@ from Models.Utility.Metricks import Metrics
 if __name__ == "__main__":
     train, test, dummy_test, class_names, yolo_cfg = prep_paths()
     trained_model = os.getcwd()
-    trained_model += "\\Models\\SSD\\TrainedModel\\SSD_50_e300_t.pth"
+    trained_model += "\\Models\\SSD\\TrainedModel\\SSD_50_e200_t.pth"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     encoding = []
     num_classes = 1

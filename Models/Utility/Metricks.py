@@ -13,7 +13,7 @@ class Metrics:
         self.miss_rates = []
         self.TNRs = []
         self.balanced_accs = []
-        self.map = 0
+        self.ap = 0
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.not_recognized = 0
         self.recognised = 0
@@ -49,7 +49,7 @@ class Metrics:
         else:
             self.not_recognized += 1
 
-    def statistic_prep(self, net_output_loc, net_output_cls, target_loc, target_cls, dbox, conf_thres=0.48, jacc_thres=0.25):
+    def statistic_prep(self, net_output_loc, net_output_cls, target_loc, target_cls, dbox, conf_thres=0.5, jacc_thres=0.5):
         net_output_loc = net_output_loc.to(self.device)
         net_output_loc = decode(net_output_loc, dbox)
         target_loc = target_loc.to(self.device)
@@ -81,42 +81,29 @@ class Metrics:
         else:
             self.not_recognized += 1
 
-    def mAP(self):
+    def AP(self):
         precision = torch.FloatTensor(self.precisions)
         recall = torch.FloatTensor(self.recalls)
-        list = []
-        pr = torch.cat((recall.unsqueeze(0), precision.unsqueeze(0)), 0)
-        _, i = recall.sort(0)
-        for idx in i:
-            pr_part = pr[:, idx]
-            list.append(pr_part)
-        max_prec = 0
-        min_recall = 0
-        rec = []
-        map = 0
-        for idx2, val in enumerate(list):
-            if val[1] >= max_prec:
-                max_prec = val[1]
-                min_recall = val[0]
-            if val[1] < max_prec:
-                rec.append([min_recall, max_prec])
-                max_prec = val[1]
-                min_recall = val[0]
-            if idx2 == (len(list) - 1):
-                rec.append([min_recall, max_prec])
-        for i, box in enumerate(rec):
-            if map == 0:
-                map = box[0] * box[1]
+        recall_values = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
+        interpolated_prec = []
+        for recal_i, recall_v in enumerate(recall_values):
+            if recall_v < 1:
+                ge_mask = recall.ge(recall_v)
+                lt_mask = recall.lt(recall_values[recal_i + 1])
+                temp_prec = precision * ge_mask.float()
+                temp_prec = temp_prec * lt_mask.float()
+                prec = max(temp_prec)
+                interpolated_prec.append(prec)
             else:
-                if box[1] < rec[i-1][1]:
-                    map += (box[0].item() - rec[i-1][0])*box[1]
-                else:
-                    map = box[0] * box[1]
-        self.map = map
+                ge_mask = recall.ge(recall_v)
+                temp_prec = precision * ge_mask.float()
+                prec = max(temp_prec)
+                interpolated_prec.append(prec)
+        self.ap = sum(interpolated_prec) / len(interpolated_prec)
 
     def calc_net_stat(self):
         if(len(self.precisions) != 0):
-            self.mAP()
+            self.AP()
             avg_prec = sum(self.precisions) / len(self.precisions)
             avg_recal = sum(self.recalls) / len(self.recalls)
             avg_acc = sum(self.accuracys) / len(self.accuracys)
@@ -131,9 +118,9 @@ class Metrics:
                   f"balans acc  : {avg_bacc}\n"
                   f"false alarm : {avg_far}\n"
                   f"miss rate   : {avg_mr}\n"
-                  f"AP          : {self.map}\n"
+                  f"AP          : {self.ap}\n"
                   f"% rozpo     : {recognition_ratio}")
-            return avg_prec, avg_recal, avg_acc, avg_bacc, avg_far, avg_mr, self.map, recognition_ratio
+            return avg_prec, avg_recal, avg_acc, avg_bacc, avg_far, avg_mr, self.ap, recognition_ratio
         else:
             print("no detections")
 

@@ -11,7 +11,7 @@ from Models.Utility.Metricks import Metrics
 if __name__ == "__main__":
     train, test, dummy_test, class_names, yolo_cfg = prep_paths()
     trained_model = os.getcwd()
-    trained_model += "\\Models\\RetinaNet\\TrainedModel\\RetinaNet_400_lr10000.pth"
+    trained_model += "\\Models\\RetinaNet\\TrainedModel\\RetinaNet_225e.pth"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     num_classes = 1
     img_size = 608

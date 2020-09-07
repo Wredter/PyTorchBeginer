@@ -50,7 +50,7 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
 if __name__ == "__main__":
     train, test, dummy_test, class_names, yolo_cfg = prep_paths()
     trained_model = os.getcwd()
-    trained_model += "\\Models\\YOLO\\TrainedModel\\Yolov3_150e.pth"
+    trained_model += "\\Models\\YOLO\\TrainedModel\\Yolov3_300e.pth"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     num_classes = 1
     batch_size = 8
@@ -60,7 +60,7 @@ if __name__ == "__main__":
         model.load_state_dict(torch.load(trained_model))
         model.to(device)
         model.eval()
-        test_ds = ImgDataset(csv_file=test)
+        test_ds = ImgDataset(csv_file=train)
         dataloader = torch.utils.data.DataLoader(
             test_ds,
             batch_size=batch_size,
@@ -78,8 +78,8 @@ if __name__ == "__main__":
             loss, outputs = model(imgs, targets)
             for batch_j in range(outputs.shape[0]):
                 quality.stastic_prep_YOLO(outputs[batch_j, :, :4], outputs[batch_j, :, 4], targets[batch_j], imgs[batch_j])
-                output_loc, output_cls, target_loc, num = nms_prep(imgs[batch_j], targets[batch_j], outputs[batch_j])
-                print("test")
+                # output_loc, output_cls, target_loc, num = nms_prep(imgs[batch_j], targets[batch_j], outputs[batch_j])
+            print(f'Batch: {batch_i}')
     quality.calc_net_stat()
     print("finish")
 
